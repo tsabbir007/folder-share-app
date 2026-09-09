@@ -1,0 +1,20 @@
+services:
+  folder-share:
+    build: .
+    ports:
+      - "3100:3100"
+    env_file:
+      - .env
+    environment:
+      - DATA_DIR=/data
+    volumes:
+      # .state.json (your share list + passwords) persists here across restarts.
+      - folder-share-data:/data
+      # Mount host folders at the SAME path inside the container so any
+      # shares you already configured keep working without changes.
+      # Add one line per drive/folder you want selectable in the app.
+      - "/Volumes/EB HDD 1:/Volumes/EB HDD 1"
+    restart: unless-stopped
+
+volumes:
+  folder-share-data:

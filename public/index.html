@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Folder Share</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<header>
+  <h1>Folder Share</h1>
+</header>
+
+<main>
+  <section id="tunnel-panel">
+    <div class="tunnel-row">
+      <span id="tunnel-indicator" class="dot stopped"></span>
+      <span id="tunnel-label">Tunnel stopped</span>
+      <button id="tunnel-toggle">Start Tunnel</button>
+    </div>
+    <div class="path-bar" id="tunnel-url" hidden></div>
+  </section>
+
+  <section id="shares-view">
+    <div class="section-header">
+      <h2>Shared Folders</h2>
+      <button id="add-folder-btn">+ Add Folder</button>
+    </div>
+    <div class="list" id="shares-list"></div>
+  </section>
+
+  <section id="browse-view" hidden>
+    <div class="section-header">
+      <h2>Pick a folder</h2>
+      <button class="secondary" id="browse-cancel-btn">Cancel</button>
+    </div>
+    <div class="path-bar" id="current-path"></div>
+    <div class="list" id="browse-list"></div>
+    <div class="permission-row">
+      <label for="permission-select">Access:</label>
+      <select id="permission-select">
+        <option value="both">Read &amp; Write</option>
+        <option value="read">Read only</option>
+        <option value="write">Write only</option>
+      </select>
+      <label for="upload-limit-input" id="upload-limit-label" class="upload-limit-label">Upload limit (MB):</label>
+      <input type="number" id="upload-limit-input" min="1" placeholder="Default" />
+      <button id="add-share-btn">Add This Folder</button>
+    </div>
+  </section>
+
+  <section id="file-view" hidden>
+    <div class="section-header">
+      <h2 id="file-view-title"></h2>
+      <button class="secondary" id="file-view-back-btn">Back</button>
+    </div>
+    <div class="path-bar" id="current-rel"></div>
+    <div class="list" id="files-list"></div>
+    <form id="upload-form" hidden>
+      <input type="file" id="upload-input" multiple />
+      <button type="submit">Upload</button>
+    </form>
+    <div class="upload-limit-note" id="upload-limit-note" hidden></div>
+    <div class="progress-row" id="upload-progress-row" hidden>
+      <progress id="upload-progress" value="0" max="100"></progress>
+      <span id="upload-percent">0%</span>
+    </div>
+    <div id="upload-status" hidden></div>
+  </section>
+</main>
+
+<div id="preview-overlay" class="preview-overlay" hidden>
+  <div class="preview-box">
+    <div class="preview-header">
+      <span id="preview-title"></span>
+      <button class="secondary small" id="preview-close-btn">Close</button>
+    </div>
+    <div class="preview-body" id="preview-body"></div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

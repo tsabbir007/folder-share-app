@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Shared Folder</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --bg: #fafafa;
+  --fg: #1a1a1a;
+  --border: #ddd;
+  --accent: #2563eb;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1a1a1a; --fg: #f0f0f0; --border: #333; }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); }
+h1 { margin: 0; font-size: 1.15rem; }
+main { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+.path-bar {
+  font-family: ui-monospace, monospace;
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  background: rgba(127,127,127,0.08);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  word-break: break-all;
+}
+.list {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 1rem;
+}
+.entry {
+  padding: 0.6rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.entry:last-child { border-bottom: none; }
+.entry.dir { cursor: pointer; }
+.entry.dir:hover { background: rgba(37,99,235,0.08); }
+.entry .size { opacity: 0.6; font-size: 0.8rem; }
+.entry a { margin-left: auto; }
+input[type=password], input[type=file] {
+  padding: 0.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 0.9rem;
+  width: 100%;
+}
+button {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 0.6rem 1.2rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+button.link { background: none; color: var(--accent); padding: 0; text-decoration: underline; }
+form { display: flex; flex-direction: column; gap: 0.7rem; }
+#upload-form { flex-direction: row; flex-wrap: wrap; }
+[hidden] { display: none !important; }
+.error { color: #dc2626; font-size: 0.85rem; }
+.success { color: #16a34a; font-size: 0.85rem; }
+.progress-row { display: flex; align-items: center; gap: 0.6rem; }
+progress { flex: 1; height: 8px; accent-color: var(--accent); }
+#upload-percent { font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 2.5em; text-align: right; }
+.footer-row { margin-top: 1rem; text-align: right; }
+.upload-limit-note { font-size: 0.8rem; opacity: 0.65; margin: 0.5rem 0; }
+.entry .name { cursor: pointer; }
+.entry .name.previewable:hover { text-decoration: underline; }
+.preview-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  z-index: 100;
+}
+.preview-box {
+  background: var(--bg);
+  color: var(--fg);
+  border-radius: 8px;
+  max-width: min(90vw, 900px);
+  max-height: 90vh;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.preview-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.7rem 1rem;
+  border-bottom: 1px solid var(--border);
+}
+.preview-header span { font-size: 0.9rem; word-break: break-all; }
+.preview-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  overflow: auto;
+}
+.preview-body img { max-width: 100%; max-height: 80vh; display: block; }
+.preview-body video { max-width: 100%; max-height: 80vh; }
+.preview-body audio { width: 100%; }
+.preview-body iframe { width: 100%; height: 80vh; border: none; }
+</style>
+</head>
+<body>
+<header><h1 id="page-title">Shared Folder</h1></header>
+<main>
+  <div id="login-view">
+    <p id="login-desc">Enter the password to access this folder.</p>
+    <form id="login-form">
+      <input type="password" id="password-input" placeholder="Password" autofocus />
+      <button type="submit">Unlock</button>
+      <div class="error" id="login-error" hidden></div>
+    </form>
+  </div>
+
+  <div id="browser-view" hidden>
+    <div class="path-bar" id="current-rel"></div>
+    <div class="list" id="files-list"></div>
+    <form id="upload-form" hidden>
+      <input type="file" id="upload-input" multiple />
+      <button type="submit">Upload</button>
+    </form>
+    <div class="upload-limit-note" id="upload-limit-note" hidden></div>
+    <div class="progress-row" id="upload-progress-row" hidden>
+      <progress id="upload-progress" value="0" max="100"></progress>
+      <span id="upload-percent">0%</span>
+    </div>
+    <div id="upload-status" hidden></div>
+    <div class="footer-row">
+      <button class="link" id="logout-btn">Log out of this share</button>
+    </div>
+  </div>
+</main>
+
+<div id="preview-overlay" class="preview-overlay" hidden>
+  <div class="preview-box">
+    <div class="preview-header">
+      <span id="preview-title"></span>
+      <button class="link" id="preview-close-btn">Close</button>
+    </div>
+    <div class="preview-body" id="preview-body"></div>
+  </div>
+</div>
+
+<script>
+const shareId = location.pathname.split("/")[2];
+const base = "/share/" + shareId;
+let permission = "read"; // fail closed until enterBrowser() sets the real value
+let currentRel = "";
+let maxUploadMB = null;
+
+async function api(url, opts) {
+  const res = await fetch(url, opts);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || "Request failed");
+  }
+  return res.json();
+}
+
+async function init() {
+  const meta = await api(base + "/meta");
+  document.getElementById("page-title").textContent = meta.name;
+  document.title = meta.name + " — Shared Folder";
+  document.getElementById("login-desc").textContent =
+    "Enter the password to access “" + meta.name + "”.";
+  maxUploadMB = meta.maxUploadMB;
+
+  const status = await api(base + "/status");
+  if (status.authenticated) {
+    enterBrowser(status.permission);
+  }
+}
+
+function enterBrowser(currentPermission) {
+  permission = currentPermission;
+  const isWriteOnly = permission === "write";
+  document.getElementById("login-view").hidden = true;
+  document.getElementById("browser-view").hidden = false;
+  document.getElementById("upload-form").hidden = permission === "read";
+  const limitNote = document.getElementById("upload-limit-note");
+  limitNote.hidden = permission === "read";
+  limitNote.textContent = "Upload limit: " + maxUploadMB + " MB per file";
+  document.getElementById("current-rel").hidden = isWriteOnly;
+  document.getElementById("files-list").hidden = isWriteOnly;
+  if (isWriteOnly) {
+    currentRel = "";
+  } else {
+    loadFiles("");
+  }
+}
+
+document.getElementById("login-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const password = document.getElementById("password-input").value;
+  const errorEl = document.getElementById("login-error");
+  errorEl.hidden = true;
+  try {
+    await api(base + "/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    // Re-fetch permission fresh rather than trusting a value captured
+    // before login resolved, since the two requests can race.
+    const status = await api(base + "/status");
+    enterBrowser(status.permission);
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.hidden = false;
+  }
+};
+
+document.getElementById("logout-btn").onclick = async () => {
+  await api(base + "/logout", { method: "POST" });
+  location.reload();
+};
+
+async function loadFiles(rel) {
+  const data = await api(base + "/files?path=" + encodeURIComponent(rel));
+  currentRel = data.path;
+  document.getElementById("current-rel").textContent = "/" + currentRel;
+  const list = document.getElementById("files-list");
+  list.innerHTML = "";
+  if (currentRel) {
+    const up = document.createElement("div");
+    up.className = "entry dir";
+    up.textContent = ".. (up)";
+    const parts = currentRel.split("/");
+    parts.pop();
+    up.onclick = () => loadFiles(parts.join("/"));
+    list.appendChild(up);
+  }
+  data.entries.forEach((e) => {
+    const el = document.createElement("div");
+    const relPath = currentRel ? currentRel + "/" + e.name : e.name;
+    if (e.isDir) {
+      el.className = "entry dir";
+      el.textContent = "\u{1F4C1} " + e.name;
+      el.onclick = () => loadFiles(relPath);
+    } else {
+      el.className = "entry file";
+      const kind = previewKind(e.name);
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "name" + (kind ? " previewable" : "");
+      nameSpan.textContent = "\u{1F4C4} " + e.name;
+      if (kind && permission !== "write") {
+        nameSpan.onclick = () =>
+          openPreview(e.name, base + "/preview?path=" + encodeURIComponent(relPath), kind);
+      }
+      el.appendChild(nameSpan);
+      const sizeSpan = document.createElement("span");
+      sizeSpan.className = "size";
+      sizeSpan.textContent = formatSize(e.size);
+      el.appendChild(sizeSpan);
+      if (permission !== "write") {
+        const link = document.createElement("a");
+        link.href = base + "/download?path=" + encodeURIComponent(relPath);
+        link.textContent = "Download";
+        el.appendChild(link);
+      }
+    }
+    list.appendChild(el);
+  });
+}
+
+function previewKind(name) {
+  const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
+  if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"].includes(ext)) return "image";
+  if ([".mp4", ".webm", ".ogv", ".mov", ".m4v"].includes(ext)) return "video";
+  if ([".mp3", ".wav", ".m4a", ".flac", ".aac", ".oga"].includes(ext)) return "audio";
+  if (ext === ".pdf") return "pdf";
+  return null;
+}
+
+const previewOverlay = document.getElementById("preview-overlay");
+const previewTitle = document.getElementById("preview-title");
+const previewBody = document.getElementById("preview-body");
+
+function openPreview(name, url, kind) {
+  previewTitle.textContent = name;
+  previewBody.innerHTML = "";
+  let el;
+  if (kind === "image") {
+    el = document.createElement("img");
+    el.src = url;
+  } else if (kind === "video") {
+    el = document.createElement("video");
+    el.src = url;
+    el.controls = true;
+    el.autoplay = true;
+  } else if (kind === "audio") {
+    el = document.createElement("audio");
+    el.src = url;
+    el.controls = true;
+    el.autoplay = true;
+  } else if (kind === "pdf") {
+    el = document.createElement("iframe");
+    el.src = url;
+  }
+  if (el) previewBody.appendChild(el);
+  previewOverlay.hidden = false;
+}
+
+function closePreview() {
+  previewOverlay.hidden = true;
+  previewBody.innerHTML = "";
+}
+
+document.getElementById("preview-close-btn").onclick = closePreview;
+previewOverlay.onclick = (e) => {
+  if (e.target === previewOverlay) closePreview();
+};
+
+function formatSize(bytes) {
+  if (bytes == null) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let i = 0;
+  while (bytes >= 1024 && i < units.length - 1) {
+    bytes /= 1024;
+    i++;
+  }
+  return bytes.toFixed(1) + " " + units[i];
+}
+
+function uploadWithProgress(url, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", url);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        let message = xhr.statusText;
+        try {
+          message = JSON.parse(xhr.responseText).error || message;
+        } catch {
+          /* non-JSON error body */
+        }
+        reject(new Error(message));
+      }
+    };
+    xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.send(formData);
+  });
+}
+
+document.getElementById("upload-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const input = document.getElementById("upload-input");
+  if (!input.files.length) return;
+  const formData = new FormData();
+  for (const f of input.files) formData.append("files", f);
+
+  const progressRow = document.getElementById("upload-progress-row");
+  const progressEl = document.getElementById("upload-progress");
+  const percentEl = document.getElementById("upload-percent");
+  const statusEl = document.getElementById("upload-status");
+  statusEl.hidden = true;
+  progressEl.value = 0;
+  percentEl.textContent = "0%";
+  progressRow.hidden = false;
+
+  try {
+    await uploadWithProgress(
+      base + "/upload?path=" + encodeURIComponent(currentRel),
+      formData,
+      (pct) => {
+        progressEl.value = pct;
+        percentEl.textContent = pct + "%";
+      }
+    );
+    progressRow.hidden = true;
+    statusEl.className = "success";
+    statusEl.textContent = "Upload complete!";
+    statusEl.hidden = false;
+    input.value = "";
+    if (permission !== "write") loadFiles(currentRel);
+    setTimeout(() => (statusEl.hidden = true), 3000);
+  } catch (err) {
+    progressRow.hidden = true;
+    statusEl.className = "error";
+    statusEl.textContent = err.message;
+    statusEl.hidden = false;
+  }
+};
+
+init();
+</script>
+</body>
+</html>
