@@ -7,10 +7,18 @@ import fs from "fs";
 import os from "os";
 import crypto from "crypto";
 import multer from "multer";
+import archiver from "archiver";
 import { getTunnelStatus, startTunnel, stopTunnel } from "./tunnel";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const APP_VERSION: string = (() => {
+  try {
+    return JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8")).version;
+  } catch {
+    return "0.0.0";
+  }
+})();
 const USERNAME = process.env.USERNAME;
 const PASSWORD = process.env.PASSWORD;
 if (!USERNAME || !PASSWORD) {
@@ -25,7 +33,7 @@ const STATE_FILE = path.join(DATA_DIR, ".state.json");
 const SHARE_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 5120);
 const MAX_LOGIN_FAILURES = 10;
-const LOGIN_FAILURE_WINDOW_MS = 15 * 60 * 1000;
+const LOGIN_FAILURE_WINDOW_MS = 3 * 60 * 1000;
 
 type Permission = "read" | "write" | "both";
 const PERMISSIONS: Permission[] = ["read", "write", "both"];
@@ -179,6 +187,20 @@ function clearLoginFailures(key: string) {
   loginFailures.delete(key);
 }
 
+// Renders "Try again in N minute(s)"/"N second(s)" based on how much of the
+// lockout window is actually left, so the message stays accurate even if
+// the caller checks partway through the window rather than right at the start.
+function lockoutMessage(key: string): string {
+  const entry = loginFailures.get(key);
+  const remainingMs = entry ? Math.max(0, entry.resetAt - Date.now()) : LOGIN_FAILURE_WINDOW_MS;
+  const remainingSec = Math.ceil(remainingMs / 1000);
+  if (remainingSec <= 60) {
+    return `Too many failed attempts. Try again in ${remainingSec} second${remainingSec === 1 ? "" : "s"}.`;
+  }
+  const remainingMin = Math.ceil(remainingSec / 60);
+  return `Too many failed attempts. Try again in ${remainingMin} minute${remainingMin === 1 ? "" : "s"}.`;
+}
+
 setInterval(() => {
   const now = Date.now();
   for (const [token, info] of shareSessions) {
@@ -203,7 +225,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
   const failureKey = `admin:${req.ip}`;
   if (isLockedOut(failureKey)) {
-    return res.status(429).send("Too many failed attempts. Try again later.");
+    return res.status(429).send(lockoutMessage(failureKey));
   }
 
   const header = req.headers.authorization;
@@ -226,6 +248,10 @@ app.use((req: Request, res: Response, next: NextFunction) => {
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "public")));
+
+app.get("/api/version", (_req: Request, res: Response) => {
+  res.json({ version: APP_VERSION });
+});
 
 // --- Filesystem browser, for picking a folder to add (admin only) ---
 app.get("/api/browse", (req: Request, res: Response) => {
@@ -346,6 +372,10 @@ app.get("/api/shares/:id/download", requireShare, (req: Request, res: Response) 
   downloadFile((req as any).share, req, res);
 });
 
+app.get("/api/shares/:id/download-zip", requireShare, (req: Request, res: Response) => {
+  downloadFolderZip((req as any).share, req, res);
+});
+
 app.get("/api/shares/:id/preview", requireShare, (req: Request, res: Response) => {
   previewFile((req as any).share, req, res);
 });
@@ -421,6 +451,35 @@ function downloadFile(share: Share, req: Request, res: Response) {
   }
 }
 
+function downloadFolderZip(share: Share, req: Request, res: Response) {
+  if (share.permission === "write") {
+    return res.status(403).send("This share is write-only");
+  }
+  const rel = (req.query.path as string) || "";
+  try {
+    const target = resolveSafe(share.path, rel);
+    assertRealPathWithin(share.path, target);
+    if (!fs.existsSync(target) || !fs.statSync(target).isDirectory()) {
+      return res.status(400).send("Not a folder");
+    }
+    const folderName = rel ? path.basename(target) : share.name;
+    res.set("Content-Type", "application/zip");
+    res.set("Content-Disposition", `attachment; filename="${folderName.replace(/"/g, "")}.zip"`);
+    const archive = archiver("zip", { zlib: { level: 6 } });
+    // Once headers are sent, the only way left to signal a mid-stream
+    // failure to the client is to abort the connection.
+    archive.on("error", (err) => {
+      if (!res.headersSent) res.status(500).json({ error: err.message });
+      else res.destroy(err);
+    });
+    archive.pipe(res);
+    archive.directory(target, false);
+    archive.finalize();
+  } catch (err: any) {
+    res.status(400).send(err.message);
+  }
+}
+
 // Extensions safe to render inline in the browser (images/video/audio/pdf).
 // Deliberately excludes SVG and anything else that can carry executable
 // content, since these are served same-origin with Content-Disposition:
@@ -484,7 +543,7 @@ shareRouter.post("/:id/login", (req: Request, res: Response) => {
   if (!share) return res.status(404).json({ error: "This share link is no longer valid" });
   const failureKey = `share:${share.id}:${req.ip}`;
   if (isLockedOut(failureKey)) {
-    return res.status(429).json({ error: "Too many failed attempts. Try again later." });
+    return res.status(429).json({ error: lockoutMessage(failureKey) });
   }
   const password = req.body?.password as string;
   if (!password || !safeEqual(password, share.password)) {
@@ -526,6 +585,10 @@ shareRouter.get("/:id/files", requireShareSession, (req: Request, res: Response)
 
 shareRouter.get("/:id/download", requireShareSession, (req: Request, res: Response) => {
   downloadFile((req as any).share, req, res);
+});
+
+shareRouter.get("/:id/download-zip", requireShareSession, (req: Request, res: Response) => {
+  downloadFolderZip((req as any).share, req, res);
 });
 
 shareRouter.get("/:id/preview", requireShareSession, (req: Request, res: Response) => {

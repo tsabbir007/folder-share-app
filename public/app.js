@@ -1,4 +1,5 @@
 const els = {
+  versionTag: document.getElementById("version-tag"),
   tunnelIndicator: document.getElementById("tunnel-indicator"),
   tunnelLabel: document.getElementById("tunnel-label"),
   tunnelToggle: document.getElementById("tunnel-toggle"),
@@ -18,13 +19,16 @@ const els = {
   fileViewTitle: document.getElementById("file-view-title"),
   fileViewBackBtn: document.getElementById("file-view-back-btn"),
   currentRel: document.getElementById("current-rel"),
+  downloadZipBtn: document.getElementById("download-zip-btn"),
   filesList: document.getElementById("files-list"),
   uploadForm: document.getElementById("upload-form"),
   uploadInput: document.getElementById("upload-input"),
   uploadLimitNote: document.getElementById("upload-limit-note"),
-  uploadProgressRow: document.getElementById("upload-progress-row"),
-  uploadProgress: document.getElementById("upload-progress"),
-  uploadPercent: document.getElementById("upload-percent"),
+  uploadQueue: document.getElementById("upload-queue"),
+  uploadQueueList: document.getElementById("upload-queue-list"),
+  uploadQueueSummary: document.getElementById("upload-queue-summary"),
+  uploadQueueOverallFill: document.getElementById("upload-queue-overall-fill"),
+  uploadQueueOverallPct: document.getElementById("upload-queue-overall-pct"),
   uploadStatus: document.getElementById("upload-status"),
   previewOverlay: document.getElementById("preview-overlay"),
   previewTitle: document.getElementById("preview-title"),
@@ -326,6 +330,7 @@ function openShare(share) {
   els.uploadLimitNote.textContent = "Upload limit: " + share.effectiveMaxUploadMB + " MB per file";
   els.currentRel.hidden = isWriteOnly;
   els.filesList.hidden = isWriteOnly;
+  els.downloadZipBtn.hidden = isWriteOnly;
   showView("file");
   if (isWriteOnly) {
     state.currentRel = "";
@@ -333,6 +338,12 @@ function openShare(share) {
     loadFiles("");
   }
 }
+
+els.downloadZipBtn.onclick = () => {
+  const share = state.activeShare;
+  const url = `/api/shares/${share.id}/download-zip?path=` + encodeURIComponent(state.currentRel);
+  window.location.href = url;
+};
 
 els.fileViewBackBtn.onclick = () => {
   state.activeShare = null;
@@ -360,8 +371,21 @@ async function loadFiles(rel) {
     const relPath = state.currentRel ? state.currentRel + "/" + e.name : e.name;
     if (e.isDir) {
       el.className = "entry dir";
-      el.textContent = "\u{1F4C1} " + e.name;
-      el.onclick = () => loadFiles(relPath);
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "name";
+      nameSpan.textContent = "\u{1F4C1} " + e.name;
+      nameSpan.onclick = () => loadFiles(relPath);
+      el.appendChild(nameSpan);
+      const zipBtn = document.createElement("button");
+      zipBtn.className = "secondary small zip-btn";
+      zipBtn.textContent = "ZIP";
+      zipBtn.title = "Download this folder as a ZIP";
+      zipBtn.onclick = (evt) => {
+        evt.stopPropagation();
+        window.location.href =
+          `/api/shares/${share.id}/download-zip?path=` + encodeURIComponent(relPath);
+      };
+      el.appendChild(zipBtn);
     } else {
       el.className = "entry file";
       const kind = previewKind(e.name);
@@ -448,12 +472,19 @@ function formatSize(bytes) {
   return bytes.toFixed(1) + " " + units[i];
 }
 
-function uploadWithProgress(url, formData, onProgress) {
+// Uploads a single file with fine-grained progress. Distinguishes "bytes
+// still going over the wire" from "server is writing to disk", since large
+// files can sit at 100% for a while once the browser is done sending but
+// before the server has finished flushing to disk and responding.
+function uploadFileWithProgress(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        onProgress(pct === 100 ? { pct, finishing: true } : { pct, finishing: false });
+      }
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
@@ -469,47 +500,155 @@ function uploadWithProgress(url, formData, onProgress) {
       }
     };
     xhr.onerror = () => reject(new Error("Upload failed"));
+    const formData = new FormData();
+    formData.append("files", file);
     xhr.send(formData);
   });
+}
+
+function buildUploadRow(file) {
+  const row = document.createElement("div");
+  row.className = "upload-item";
+  row.dataset.state = "queued";
+
+  const icon = document.createElement("span");
+  icon.className = "upload-item-icon";
+  row.appendChild(icon);
+
+  const main = document.createElement("div");
+  main.className = "upload-item-main";
+
+  const nameRow = document.createElement("div");
+  nameRow.className = "upload-item-name-row";
+  const name = document.createElement("span");
+  name.className = "upload-item-name";
+  name.textContent = file.name;
+  nameRow.appendChild(name);
+  const size = document.createElement("span");
+  size.className = "upload-item-size";
+  size.textContent = formatSize(file.size);
+  nameRow.appendChild(size);
+  main.appendChild(nameRow);
+
+  const bar = document.createElement("div");
+  bar.className = "upload-item-bar";
+  const fill = document.createElement("div");
+  fill.className = "upload-item-bar-fill";
+  bar.appendChild(fill);
+  main.appendChild(bar);
+
+  row.appendChild(main);
+
+  const status = document.createElement("span");
+  status.className = "upload-item-status";
+  status.textContent = "Waiting…";
+  row.appendChild(status);
+
+  return { row, fill, status };
+}
+
+async function uploadFilesOneByOne(share, files) {
+  const total = files.length;
+  els.uploadQueueList.innerHTML = "";
+  els.uploadQueueOverallFill.style.width = "0%";
+  els.uploadQueueOverallPct.textContent = "0%";
+  els.uploadQueue.hidden = false;
+
+  const rows = files.map((file) => {
+    const built = buildUploadRow(file);
+    els.uploadQueueList.appendChild(built.row);
+    return built;
+  });
+
+  let completedBytes = 0;
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
+  let failures = 0;
+
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    const { row, fill, status } = rows[i];
+    row.dataset.state = "uploading";
+    status.textContent = "0%";
+    els.uploadQueueSummary.textContent = `Uploading ${i + 1} of ${total}…`;
+
+    try {
+      await uploadFileWithProgress(
+        `/api/shares/${share.id}/upload?path=` + encodeURIComponent(state.currentRel),
+        file,
+        ({ pct, finishing }) => {
+          fill.style.width = pct + "%";
+          if (finishing) {
+            row.dataset.state = "finishing";
+            status.textContent = "Saving…";
+          } else {
+            status.textContent = pct + "%";
+          }
+          const overallPct = Math.round(((completedBytes + (pct / 100) * file.size) / totalBytes) * 100);
+          els.uploadQueueOverallFill.style.width = overallPct + "%";
+          els.uploadQueueOverallPct.textContent = overallPct + "%";
+        }
+      );
+      row.dataset.state = "done";
+      fill.style.width = "100%";
+      status.textContent = "Done";
+    } catch (err) {
+      row.dataset.state = "error";
+      status.textContent = err.message || "Failed";
+      failures++;
+    }
+
+    completedBytes += file.size;
+    const overallPct = Math.round((completedBytes / totalBytes) * 100);
+    els.uploadQueueOverallFill.style.width = overallPct + "%";
+    els.uploadQueueOverallPct.textContent = overallPct + "%";
+  }
+
+  els.uploadQueueSummary.textContent =
+    failures === 0 ? `Uploaded ${total} file${total === 1 ? "" : "s"}` : `${total - failures} of ${total} uploaded`;
+
+  return failures;
 }
 
 els.uploadForm.onsubmit = async (e) => {
   e.preventDefault();
   const share = state.activeShare;
   if (!els.uploadInput.files.length) return;
-  const formData = new FormData();
-  for (const f of els.uploadInput.files) formData.append("files", f);
+  const files = Array.from(els.uploadInput.files);
 
   els.uploadStatus.hidden = true;
-  els.uploadProgress.value = 0;
-  els.uploadPercent.textContent = "0%";
-  els.uploadProgressRow.hidden = false;
+  const failures = await uploadFilesOneByOne(share, files);
 
-  try {
-    await uploadWithProgress(
-      `/api/shares/${share.id}/upload?path=` + encodeURIComponent(state.currentRel),
-      formData,
-      (pct) => {
-        els.uploadProgress.value = pct;
-        els.uploadPercent.textContent = pct + "%";
-      }
-    );
-    els.uploadProgressRow.hidden = true;
+  setTimeout(() => {
+    els.uploadQueue.hidden = true;
+  }, failures === 0 ? 1200 : 4000);
+
+  if (failures === 0) {
     els.uploadStatus.className = "success";
     els.uploadStatus.textContent = "Upload complete!";
-    els.uploadStatus.hidden = false;
-    els.uploadInput.value = "";
-    if (share.permission !== "write") loadFiles(state.currentRel);
-    setTimeout(() => (els.uploadStatus.hidden = true), 3000);
-  } catch (err) {
-    els.uploadProgressRow.hidden = true;
+  } else {
     els.uploadStatus.className = "error";
-    els.uploadStatus.textContent = err.message;
-    els.uploadStatus.hidden = false;
+    els.uploadStatus.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload.`;
   }
+  els.uploadStatus.hidden = false;
+  els.uploadInput.value = "";
+  if (share.permission !== "write") loadFiles(state.currentRel);
+  setTimeout(() => (els.uploadStatus.hidden = true), 4000);
 };
 
 // ---- init ----
+async function loadVersion() {
+  try {
+    const { version } = await api("/api/version");
+    if (version) {
+      els.versionTag.textContent = "v" + version;
+      els.versionTag.hidden = false;
+    }
+  } catch {
+    /* version badge is cosmetic; ignore failures */
+  }
+}
+
+loadVersion();
 refreshTunnel();
 refreshShares();
 setInterval(refreshTunnel, 5000);

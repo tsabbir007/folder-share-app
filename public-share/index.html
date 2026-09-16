@@ -11,6 +11,8 @@
   --fg: #1a1a1a;
   --border: #ddd;
   --accent: #2563eb;
+  --ok: #16a34a;
+  --danger: #dc2626;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #1a1a1a; --fg: #f0f0f0; --border: #333; }
@@ -51,8 +53,13 @@ main { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
 .entry:last-child { border-bottom: none; }
 .entry.dir { cursor: pointer; }
 .entry.dir:hover { background: rgba(37,99,235,0.08); }
+.entry.dir .name { flex: 1; cursor: pointer; }
 .entry .size { opacity: 0.6; font-size: 0.8rem; }
 .entry a { margin-left: auto; }
+.entry .zip-btn { margin-left: auto; flex-shrink: 0; }
+.path-bar-row { display: flex; align-items: center; gap: 0.5rem; }
+.path-bar-row .path-bar { flex: 1; margin-bottom: 0; }
+.path-bar-row button { flex-shrink: 0; margin-bottom: 0.5rem; }
 input[type=password], input[type=file] {
   padding: 0.6rem;
   border-radius: 6px;
@@ -72,14 +79,133 @@ button {
   cursor: pointer;
 }
 button.link { background: none; color: var(--accent); padding: 0; text-decoration: underline; }
+button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
+button.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
 form { display: flex; flex-direction: column; gap: 0.7rem; }
 #upload-form { flex-direction: row; flex-wrap: wrap; }
 [hidden] { display: none !important; }
-.error { color: #dc2626; font-size: 0.85rem; }
-.success { color: #16a34a; font-size: 0.85rem; }
-.progress-row { display: flex; align-items: center; gap: 0.6rem; }
-progress { flex: 1; height: 8px; accent-color: var(--accent); }
-#upload-percent { font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 2.5em; text-align: right; }
+.error { color: var(--danger); font-size: 0.85rem; }
+.success { color: var(--ok); font-size: 0.85rem; }
+.upload-queue {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.7rem 0.8rem;
+  margin-bottom: 0.5rem;
+  animation: fade-in 0.2s ease;
+}
+.upload-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 0.82rem;
+  margin-bottom: 0.4rem;
+}
+#upload-queue-overall-pct { font-variant-numeric: tabular-nums; opacity: 0.7; }
+.upload-queue-overall-bar {
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(127,127,127,0.18);
+  overflow: hidden;
+  margin-bottom: 0.6rem;
+}
+.upload-queue-overall-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  width: 0%;
+  transition: width 0.2s ease;
+}
+.upload-queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.upload-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  animation: slide-in 0.2s ease;
+}
+.upload-item-icon {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.7rem;
+  position: relative;
+}
+.upload-item[data-state="queued"] .upload-item-icon { background: rgba(127,127,127,0.2); }
+.upload-item[data-state="uploading"] .upload-item-icon,
+.upload-item[data-state="finishing"] .upload-item-icon {
+  border: 2px solid rgba(37,99,235,0.25);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+.upload-item[data-state="done"] .upload-item-icon {
+  background: var(--ok);
+  color: white;
+  animation: pop-in 0.25s ease;
+}
+.upload-item[data-state="done"] .upload-item-icon::after { content: "\2713"; }
+.upload-item[data-state="error"] .upload-item-icon {
+  background: var(--danger);
+  color: white;
+}
+.upload-item[data-state="error"] .upload-item-icon::after { content: "\2715"; }
+.upload-item-main { flex: 1; min-width: 0; }
+.upload-item-name-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  margin-bottom: 0.25rem;
+}
+.upload-item-name {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.upload-item-size { opacity: 0.55; flex-shrink: 0; font-size: 0.75rem; }
+.upload-item-bar {
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(127,127,127,0.18);
+  overflow: hidden;
+}
+.upload-item-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.15s linear;
+}
+.upload-item[data-state="finishing"] .upload-item-bar-fill {
+  background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 8px, rgba(37,99,235,0.55) 8px, rgba(37,99,235,0.55) 16px);
+  background-size: 200% 100%;
+  animation: barber-pole 0.7s linear infinite;
+}
+.upload-item[data-state="done"] .upload-item-bar-fill { background: var(--ok); }
+.upload-item[data-state="error"] .upload-item-bar-fill { background: var(--danger); }
+.upload-item-status {
+  font-size: 0.75rem;
+  min-width: 4.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  opacity: 0.75;
+  flex-shrink: 0;
+}
+.upload-item[data-state="error"] .upload-item-status { color: var(--danger); opacity: 1; }
+.upload-item[data-state="done"] .upload-item-status { color: var(--ok); opacity: 1; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@keyframes slide-in { from { transform: translateY(-4px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes barber-pole { from { background-position: 0 0; } to { background-position: 32px 0; } }
 .footer-row { margin-top: 1rem; text-align: right; }
 .upload-limit-note { font-size: 0.8rem; opacity: 0.65; margin: 0.5rem 0; }
 .entry .name { cursor: pointer; }
@@ -142,16 +268,25 @@ progress { flex: 1; height: 8px; accent-color: var(--accent); }
   </div>
 
   <div id="browser-view" hidden>
-    <div class="path-bar" id="current-rel"></div>
+    <div class="path-bar-row">
+      <div class="path-bar" id="current-rel"></div>
+      <button class="secondary small" id="download-zip-btn">⬇ Download ZIP</button>
+    </div>
     <div class="list" id="files-list"></div>
     <form id="upload-form" hidden>
       <input type="file" id="upload-input" multiple />
       <button type="submit">Upload</button>
     </form>
     <div class="upload-limit-note" id="upload-limit-note" hidden></div>
-    <div class="progress-row" id="upload-progress-row" hidden>
-      <progress id="upload-progress" value="0" max="100"></progress>
-      <span id="upload-percent">0%</span>
+    <div class="upload-queue" id="upload-queue" hidden>
+      <div class="upload-queue-header">
+        <span id="upload-queue-summary">Uploading…</span>
+        <span id="upload-queue-overall-pct">0%</span>
+      </div>
+      <div class="upload-queue-overall-bar">
+        <div class="upload-queue-overall-fill" id="upload-queue-overall-fill"></div>
+      </div>
+      <div class="upload-queue-list" id="upload-queue-list"></div>
     </div>
     <div id="upload-status" hidden></div>
     <div class="footer-row">
@@ -211,12 +346,17 @@ function enterBrowser(currentPermission) {
   limitNote.textContent = "Upload limit: " + maxUploadMB + " MB per file";
   document.getElementById("current-rel").hidden = isWriteOnly;
   document.getElementById("files-list").hidden = isWriteOnly;
+  document.getElementById("download-zip-btn").hidden = isWriteOnly;
   if (isWriteOnly) {
     currentRel = "";
   } else {
     loadFiles("");
   }
 }
+
+document.getElementById("download-zip-btn").onclick = () => {
+  window.location.href = base + "/download-zip?path=" + encodeURIComponent(currentRel);
+};
 
 document.getElementById("login-form").onsubmit = async (e) => {
   e.preventDefault();
@@ -264,8 +404,20 @@ async function loadFiles(rel) {
     const relPath = currentRel ? currentRel + "/" + e.name : e.name;
     if (e.isDir) {
       el.className = "entry dir";
-      el.textContent = "\u{1F4C1} " + e.name;
-      el.onclick = () => loadFiles(relPath);
+      const nameSpan = document.createElement("span");
+      nameSpan.className = "name";
+      nameSpan.textContent = "\u{1F4C1} " + e.name;
+      nameSpan.onclick = () => loadFiles(relPath);
+      el.appendChild(nameSpan);
+      const zipBtn = document.createElement("button");
+      zipBtn.className = "secondary small zip-btn";
+      zipBtn.textContent = "ZIP";
+      zipBtn.title = "Download this folder as a ZIP";
+      zipBtn.onclick = (evt) => {
+        evt.stopPropagation();
+        window.location.href = base + "/download-zip?path=" + encodeURIComponent(relPath);
+      };
+      el.appendChild(zipBtn);
     } else {
       el.className = "entry file";
       const kind = previewKind(e.name);
@@ -351,12 +503,19 @@ function formatSize(bytes) {
   return bytes.toFixed(1) + " " + units[i];
 }
 
-function uploadWithProgress(url, formData, onProgress) {
+// Uploads a single file with fine-grained progress. Distinguishes "bytes
+// still going over the wire" from "server is writing to disk", since large
+// files can sit at 100% for a while once the browser is done sending but
+// before the server has finished flushing to disk and responding.
+function uploadFileWithProgress(url, file, onProgress) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      if (e.lengthComputable) {
+        const pct = Math.round((e.loaded / e.total) * 100);
+        onProgress(pct === 100 ? { pct, finishing: true } : { pct, finishing: false });
+      }
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
@@ -372,48 +531,147 @@ function uploadWithProgress(url, formData, onProgress) {
       }
     };
     xhr.onerror = () => reject(new Error("Upload failed"));
+    const formData = new FormData();
+    formData.append("files", file);
     xhr.send(formData);
   });
+}
+
+function buildUploadRow(file) {
+  const row = document.createElement("div");
+  row.className = "upload-item";
+  row.dataset.state = "queued";
+
+  const icon = document.createElement("span");
+  icon.className = "upload-item-icon";
+  row.appendChild(icon);
+
+  const main = document.createElement("div");
+  main.className = "upload-item-main";
+
+  const nameRow = document.createElement("div");
+  nameRow.className = "upload-item-name-row";
+  const name = document.createElement("span");
+  name.className = "upload-item-name";
+  name.textContent = file.name;
+  nameRow.appendChild(name);
+  const size = document.createElement("span");
+  size.className = "upload-item-size";
+  size.textContent = formatSize(file.size);
+  nameRow.appendChild(size);
+  main.appendChild(nameRow);
+
+  const bar = document.createElement("div");
+  bar.className = "upload-item-bar";
+  const fill = document.createElement("div");
+  fill.className = "upload-item-bar-fill";
+  bar.appendChild(fill);
+  main.appendChild(bar);
+
+  row.appendChild(main);
+
+  const status = document.createElement("span");
+  status.className = "upload-item-status";
+  status.textContent = "Waiting…";
+  row.appendChild(status);
+
+  return { row, fill, status };
+}
+
+async function uploadFilesOneByOne(files) {
+  const queueList = document.getElementById("upload-queue-list");
+  const queue = document.getElementById("upload-queue");
+  const summary = document.getElementById("upload-queue-summary");
+  const overallFill = document.getElementById("upload-queue-overall-fill");
+  const overallPct = document.getElementById("upload-queue-overall-pct");
+
+  const total = files.length;
+  queueList.innerHTML = "";
+  overallFill.style.width = "0%";
+  overallPct.textContent = "0%";
+  queue.hidden = false;
+
+  const rows = files.map((file) => {
+    const built = buildUploadRow(file);
+    queueList.appendChild(built.row);
+    return built;
+  });
+
+  let completedBytes = 0;
+  const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
+  let failures = 0;
+
+  for (let i = 0; i < total; i++) {
+    const file = files[i];
+    const { row, fill, status } = rows[i];
+    row.dataset.state = "uploading";
+    status.textContent = "0%";
+    summary.textContent = `Uploading ${i + 1} of ${total}…`;
+
+    try {
+      await uploadFileWithProgress(
+        base + "/upload?path=" + encodeURIComponent(currentRel),
+        file,
+        ({ pct, finishing }) => {
+          fill.style.width = pct + "%";
+          if (finishing) {
+            row.dataset.state = "finishing";
+            status.textContent = "Saving…";
+          } else {
+            status.textContent = pct + "%";
+          }
+          const pctDone = Math.round(((completedBytes + (pct / 100) * file.size) / totalBytes) * 100);
+          overallFill.style.width = pctDone + "%";
+          overallPct.textContent = pctDone + "%";
+        }
+      );
+      row.dataset.state = "done";
+      fill.style.width = "100%";
+      status.textContent = "Done";
+    } catch (err) {
+      row.dataset.state = "error";
+      status.textContent = err.message || "Failed";
+      failures++;
+    }
+
+    completedBytes += file.size;
+    const pctDone = Math.round((completedBytes / totalBytes) * 100);
+    overallFill.style.width = pctDone + "%";
+    overallPct.textContent = pctDone + "%";
+  }
+
+  summary.textContent =
+    failures === 0 ? `Uploaded ${total} file${total === 1 ? "" : "s"}` : `${total - failures} of ${total} uploaded`;
+
+  return failures;
 }
 
 document.getElementById("upload-form").onsubmit = async (e) => {
   e.preventDefault();
   const input = document.getElementById("upload-input");
   if (!input.files.length) return;
-  const formData = new FormData();
-  for (const f of input.files) formData.append("files", f);
-
-  const progressRow = document.getElementById("upload-progress-row");
-  const progressEl = document.getElementById("upload-progress");
-  const percentEl = document.getElementById("upload-percent");
+  const files = Array.from(input.files);
   const statusEl = document.getElementById("upload-status");
+  const queue = document.getElementById("upload-queue");
   statusEl.hidden = true;
-  progressEl.value = 0;
-  percentEl.textContent = "0%";
-  progressRow.hidden = false;
 
-  try {
-    await uploadWithProgress(
-      base + "/upload?path=" + encodeURIComponent(currentRel),
-      formData,
-      (pct) => {
-        progressEl.value = pct;
-        percentEl.textContent = pct + "%";
-      }
-    );
-    progressRow.hidden = true;
+  const failures = await uploadFilesOneByOne(files);
+
+  setTimeout(() => {
+    queue.hidden = true;
+  }, failures === 0 ? 1200 : 4000);
+
+  if (failures === 0) {
     statusEl.className = "success";
     statusEl.textContent = "Upload complete!";
-    statusEl.hidden = false;
-    input.value = "";
-    if (permission !== "write") loadFiles(currentRel);
-    setTimeout(() => (statusEl.hidden = true), 3000);
-  } catch (err) {
-    progressRow.hidden = true;
+  } else {
     statusEl.className = "error";
-    statusEl.textContent = err.message;
-    statusEl.hidden = false;
+    statusEl.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload.`;
   }
+  statusEl.hidden = false;
+  input.value = "";
+  if (permission !== "write") loadFiles(currentRel);
+  setTimeout(() => (statusEl.hidden = true), 4000);
 };
 
 init();

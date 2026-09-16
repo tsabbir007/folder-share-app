@@ -19,7 +19,7 @@ through a Cloudflare Tunnel — no port forwarding or router config required.
   so a share can be reached from outside your network without exposing your
   own IP or opening firewall ports.
 - **Brute-force protection**: failed logins (admin or share) are rate-limited
-  per IP.
+  per IP — after 10 failed attempts, that IP is locked out for 3 minutes.
 - **Path traversal / symlink escape protection**: all file access is resolved
   and re-checked against the shared folder's real path.
 
@@ -83,21 +83,77 @@ done. No Cloudflare account is required for these quick tunnels.
 
 ## Running with Docker
 
+### Quick start
+
 ```bash
-docker compose up --build
+cp .env.example .env   # then edit USERNAME / PASSWORD / PORT
+docker compose up --build -d
 ```
 
-`docker-compose.yml`:
+This builds the image and starts the container in the background, listening
+on the `PORT` you set in `.env` (`docker-compose.yml` maps that same port on
+the host — keep the two in sync if you change it).
 
-- Reads config from `.env`.
-- Persists `.state.json` in a named volume (`folder-share-data`) mounted at
-  `/data`.
+Useful day-to-day commands:
+
+```bash
+docker compose logs -f       # follow logs
+docker compose restart       # restart the container
+docker compose down          # stop and remove the container (data is kept)
+docker compose up --build -d # rebuild after pulling code changes
+```
+
+### What `docker-compose.yml` does
+
+- Builds the image from the included `Dockerfile`.
+- Reads `USERNAME` / `PASSWORD` / `PORT` / `MAX_UPLOAD_MB` from `.env` via
+  `env_file`.
+- Persists `.state.json` (your share list, passwords, and upload-limit
+  overrides) in a named volume (`folder-share-data`) mounted at `/data`, so
+  it survives container rebuilds and restarts.
 - Mounts host folders into the container at the **same path** they exist on
   the host, so shares configured through the admin UI keep working. Edit the
-  `volumes:` section to add the drives/folders you want to be able to select.
+  `volumes:` section to add the drives/folders you want to be able to select
+  — anything not listed there won't be visible to the folder picker inside
+  the container, even if it exists on the host.
+- Sets `restart: unless-stopped`, so the app comes back up automatically
+  after a host reboot or crash.
 
-The Docker image bundles `cloudflared`, so the tunnel feature works out of the
-box in the container too.
+### Image details
+
+- Multi-stage build: compiles TypeScript in a build stage, then copies only
+  `dist/`, `public/`, `public-share/`, and production dependencies into a
+  slim `node:20-alpine` runtime image.
+- Bundles `cloudflared`, so the tunnel feature works out of the box in the
+  container too — no extra install step.
+- Runs as a non-root `app` user, with `/data` pre-created and owned by that
+  user for the state volume.
+
+### Running without Compose
+
+If you'd rather manage the container yourself:
+
+```bash
+docker build -t folder-share-app .
+docker run -d \
+  --name folder-share \
+  -p 3000:3000 \
+  --env-file .env \
+  -e DATA_DIR=/data \
+  -v folder-share-data:/data \
+  -v "/path/on/host:/path/on/host" \
+  folder-share-app
+```
+
+Adjust the `-p` mapping and the `-v` host-folder mounts to match your setup,
+same as in `docker-compose.yml` above.
+
+### Updating
+
+After pulling new code, rebuild the image so the container picks up the
+changes — `docker compose up --build -d` (or `docker build` + `docker run`
+again if you're not using Compose). The named volume keeps your `.state.json`
+across rebuilds, so shares and passwords aren't lost.
 
 ## Security notes
 
