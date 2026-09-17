@@ -7,62 +7,135 @@
 <style>
 :root {
   color-scheme: light dark;
-  --bg: #fafafa;
-  --fg: #1a1a1a;
-  --border: #ddd;
+  --bg: #f3f4f6;
+  --surface: #ffffff;
+  --surface-hover: rgba(37, 99, 235, 0.06);
+  --fg: #16181d;
+  --fg-muted: #6b7280;
+  --border: #e3e5e9;
   --accent: #2563eb;
-  --ok: #16a34a;
+  --accent-hover: #1d4ed8;
+  --accent-soft: rgba(37, 99, 235, 0.1);
   --danger: #dc2626;
+  --danger-soft: rgba(220, 38, 38, 0.1);
+  --ok: #16a34a;
+  --radius-lg: 14px;
+  --radius-md: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 6px rgba(16, 24, 40, 0.04);
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #1a1a1a; --fg: #f0f0f0; --border: #333; }
+  :root {
+    --bg: #121316;
+    --surface: #1c1e23;
+    --surface-hover: rgba(59, 130, 246, 0.1);
+    --fg: #f2f3f5;
+    --fg-muted: #9aa0aa;
+    --border: #2b2e34;
+    --accent: #3b82f6;
+    --accent-hover: #60a5fa;
+    --accent-soft: rgba(59, 130, 246, 0.16);
+    --danger: #f87171;
+    --danger-soft: rgba(248, 113, 113, 0.14);
+    --ok: #34d399;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
+  }
 }
-* { box-sizing: border-box; }
+* { box-sizing: border-box; min-width: 0; }
+html, body { overflow-x: hidden; }
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--fg);
+  -webkit-font-smoothing: antialiased;
 }
-header { padding: 1rem 1.5rem; border-bottom: 1px solid var(--border); }
-h1 { margin: 0; font-size: 1.15rem; }
-main { max-width: 480px; margin: 2rem auto; padding: 0 1rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+header {
+  padding: 0.9rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+h1 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
+main { max-width: 480px; margin: 1.25rem auto; padding: 0 0.85rem 2rem; }
+#login-view, #browser-view {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  padding: 1.1rem 1rem;
+}
+#login-desc { margin-top: 0; font-size: 0.9rem; color: var(--fg-muted); }
 .path-bar {
   font-family: ui-monospace, monospace;
-  font-size: 0.85rem;
-  padding: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.5rem 0.6rem;
   background: rgba(127,127,127,0.08);
-  border-radius: 6px;
-  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 0;
   word-break: break-all;
+  flex: 1;
+  min-width: 0;
 }
 .list {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  max-height: 400px;
+  border-radius: var(--radius-md);
+  max-height: 420px;
   overflow-y: auto;
-  margin-bottom: 1rem;
+  overflow-x: hidden;
+  margin: 0.75rem 0;
+  background: rgba(127,127,127,0.02);
 }
+.list::-webkit-scrollbar { width: 8px; }
+.list::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.3); border-radius: 999px; }
+.list::-webkit-scrollbar-track { background: transparent; }
+
+/* Every row is exactly two lines: the name, then a meta line with
+   date/size/action. Wrapping (never horizontal scroll) absorbs long names. */
 .entry {
-  padding: 0.6rem 0.8rem;
+  padding: 0.65rem 0.8rem;
   border-bottom: 1px solid var(--border);
   display: flex;
-  align-items: center;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.3rem;
 }
 .entry:last-child { border-bottom: none; }
-.entry.dir { cursor: pointer; }
-.entry.dir:hover { background: rgba(37,99,235,0.08); }
-.entry.dir .name { flex: 1; cursor: pointer; }
-.entry .size { opacity: 0.6; font-size: 0.8rem; }
-.entry a { margin-left: auto; }
-.entry .zip-btn { margin-left: auto; flex-shrink: 0; }
+.entry-name-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  cursor: default;
+}
+.entry.dir .entry-name-row,
+.entry.dir .name { cursor: pointer; }
+.entry .name {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+.entry.file .name.previewable:hover { color: var(--accent); text-decoration: underline; }
+.entry-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding-left: 1.55rem;
+  font-size: 0.78rem;
+  color: var(--fg-muted);
+}
+.entry-meta .date-added,
+.entry-meta .size { white-space: nowrap; }
+.entry-meta a,
+.entry-meta .zip-btn { margin-left: auto; flex-shrink: 0; }
+.entry.dir:hover { background: var(--surface-hover); }
+.entry.up { cursor: pointer; color: var(--fg-muted); }
+.entry.up:hover { background: var(--surface-hover); }
 .path-bar-row { display: flex; align-items: center; gap: 0.5rem; }
-.path-bar-row .path-bar { flex: 1; margin-bottom: 0; }
-.path-bar-row button { flex-shrink: 0; margin-bottom: 0.5rem; }
 input[type=password], input[type=file] {
   padding: 0.6rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--fg);
@@ -74,39 +147,51 @@ button {
   color: white;
   border: none;
   padding: 0.6rem 1.2rem;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 0.9rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s ease, transform 0.05s ease;
 }
-button.link { background: none; color: var(--accent); padding: 0; text-decoration: underline; }
+button:hover { background: var(--accent-hover); }
+button:active { transform: translateY(1px); }
+button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+button.link { background: none; color: var(--accent); padding: 0; text-decoration: underline; font-weight: 400; }
 button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
-button.small { padding: 0.3rem 0.6rem; font-size: 0.8rem; }
+button.secondary:hover { background: rgba(127,127,127,0.08); }
+button.small { padding: 0.35rem 0.65rem; font-size: 0.8rem; }
 form { display: flex; flex-direction: column; gap: 0.7rem; }
-#upload-form { flex-direction: row; flex-wrap: wrap; }
+#upload-form { flex-direction: column; align-items: stretch; gap: 0.6rem; }
+#upload-form button { width: 100%; }
 [hidden] { display: none !important; }
-.error { color: var(--danger); font-size: 0.85rem; }
-.success { color: var(--ok); font-size: 0.85rem; }
+.error { color: var(--danger); font-size: 0.85rem; font-weight: 500; }
+.success { color: var(--ok); font-size: 0.85rem; font-weight: 500; }
 .upload-queue {
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 0.7rem 0.8rem;
-  margin-bottom: 0.5rem;
+  border-radius: var(--radius-md);
+  padding: 0.8rem 0.85rem;
+  margin: 0.6rem 0;
+  background: rgba(127,127,127,0.03);
   animation: fade-in 0.2s ease;
 }
 .upload-queue-header {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  align-items: baseline;
+  align-items: center;
+  gap: 0.5rem;
   font-size: 0.82rem;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
-#upload-queue-overall-pct { font-variant-numeric: tabular-nums; opacity: 0.7; }
+#upload-queue-summary { flex: 1; min-width: 0; font-weight: 500; }
+#upload-queue-overall-pct { font-variant-numeric: tabular-nums; color: var(--fg-muted); }
+#upload-cancel-all-btn { flex-shrink: 0; margin-left: auto; }
 .upload-queue-overall-bar {
   height: 6px;
   border-radius: 3px;
   background: rgba(127,127,127,0.18);
   overflow: hidden;
-  margin-bottom: 0.6rem;
+  margin-bottom: 0.7rem;
 }
 .upload-queue-overall-fill {
   height: 100%;
@@ -118,15 +203,26 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
 .upload-queue-list {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.55rem;
   max-height: 260px;
   overflow-y: auto;
 }
+.upload-queue-list::-webkit-scrollbar { width: 8px; }
+.upload-queue-list::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.3); border-radius: 999px; }
+/* Every upload row is exactly two lines: name/size/status/cancel on top,
+   then a progress bar OR (only on failure) the error message below —
+   never both fighting for the same line, so long error text can never
+   overlap neighboring rows. */
 .upload-item {
   display: flex;
-  align-items: center;
-  gap: 0.6rem;
+  flex-direction: column;
+  gap: 0.28rem;
   animation: slide-in 0.2s ease;
+}
+.upload-item-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 .upload-item-icon {
   width: 1.2rem;
@@ -157,20 +253,19 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
   color: white;
 }
 .upload-item[data-state="error"] .upload-item-icon::after { content: "\2715"; }
-.upload-item-main { flex: 1; min-width: 0; }
-.upload-item-name-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.5rem;
-  font-size: 0.82rem;
-  margin-bottom: 0.25rem;
-}
+.upload-item[data-state="cancelled"] .upload-item-icon { background: rgba(127,127,127,0.35); color: var(--fg); }
+.upload-item[data-state="cancelled"] .upload-item-icon::after { content: "\2715"; }
 .upload-item-name {
+  flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  font-weight: 500;
+  font-size: 0.83rem;
 }
-.upload-item-size { opacity: 0.55; flex-shrink: 0; font-size: 0.75rem; }
+.upload-item-size { opacity: 0.55; flex-shrink: 0; font-size: 0.73rem; }
+.upload-item-bottom { padding-left: 1.7rem; }
 .upload-item-bar {
   height: 5px;
   border-radius: 3px;
@@ -190,26 +285,53 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
   animation: barber-pole 0.7s linear infinite;
 }
 .upload-item[data-state="done"] .upload-item-bar-fill { background: var(--ok); }
-.upload-item[data-state="error"] .upload-item-bar-fill { background: var(--danger); }
+.upload-item[data-state="cancelled"] .upload-item-bar-fill { background: rgba(127,127,127,0.5); }
+.upload-item-error {
+  display: none;
+  font-size: 0.73rem;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.upload-item[data-state="error"] .upload-item-bar { display: none; }
+.upload-item[data-state="error"] .upload-item-error { display: block; }
 .upload-item-status {
-  font-size: 0.75rem;
-  min-width: 4.2em;
+  font-size: 0.72rem;
+  min-width: 2.6em;
   text-align: right;
   font-variant-numeric: tabular-nums;
   opacity: 0.75;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 .upload-item[data-state="error"] .upload-item-status { color: var(--danger); opacity: 1; }
 .upload-item[data-state="done"] .upload-item-status { color: var(--ok); opacity: 1; }
+.upload-item[data-state="cancelled"] .upload-item-status { opacity: 0.6; }
+.upload-item-cancel {
+  background: transparent;
+  color: var(--fg-muted);
+  border: none;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  font-size: 0.7rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.upload-item-cancel:hover { background: var(--danger-soft); color: var(--danger); }
+.upload-item[data-state="done"] .upload-item-cancel,
+.upload-item[data-state="error"] .upload-item-cancel,
+.upload-item[data-state="cancelled"] .upload-item-cancel { visibility: hidden; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes slide-in { from { transform: translateY(-4px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes barber-pole { from { background-position: 0 0; } to { background-position: 32px 0; } }
-.footer-row { margin-top: 1rem; text-align: right; }
-.upload-limit-note { font-size: 0.8rem; opacity: 0.65; margin: 0.5rem 0; }
-.entry .name { cursor: pointer; }
-.entry .name.previewable:hover { text-decoration: underline; }
+.footer-row { margin-top: 1rem; text-align: center; }
+.upload-limit-note { font-size: 0.78rem; color: var(--fg-muted); margin: 0.5rem 0; }
+.empty-state { color: var(--fg-muted); font-style: italic; text-align: center; padding: 1.5rem 0.85rem; }
 .preview-overlay {
   position: fixed;
   inset: 0;
@@ -217,14 +339,16 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 1.5rem;
+  padding: 1rem;
   z-index: 100;
+  animation: fade-in 0.15s ease;
 }
 .preview-box {
-  background: var(--bg);
+  background: var(--surface);
   color: var(--fg);
-  border-radius: 8px;
-  max-width: min(90vw, 900px);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow);
+  max-width: min(94vw, 900px);
   max-height: 90vh;
   width: 100%;
   display: flex;
@@ -239,7 +363,7 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
   padding: 0.7rem 1rem;
   border-bottom: 1px solid var(--border);
 }
-.preview-header span { font-size: 0.9rem; word-break: break-all; }
+.preview-header span { font-size: 0.88rem; font-weight: 500; word-break: break-all; }
 .preview-body {
   flex: 1;
   min-height: 0;
@@ -249,7 +373,7 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
   padding: 1rem;
   overflow: auto;
 }
-.preview-body img { max-width: 100%; max-height: 80vh; display: block; }
+.preview-body img { max-width: 100%; max-height: 80vh; display: block; border-radius: var(--radius-sm); }
 .preview-body video { max-width: 100%; max-height: 80vh; }
 .preview-body audio { width: 100%; }
 .preview-body iframe { width: 100%; height: 80vh; border: none; }
@@ -270,7 +394,7 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
   <div id="browser-view" hidden>
     <div class="path-bar-row">
       <div class="path-bar" id="current-rel"></div>
-      <button class="secondary small" id="download-zip-btn">⬇ Download ZIP</button>
+      <button class="secondary small" id="download-zip-btn">⬇ ZIP</button>
     </div>
     <div class="list" id="files-list"></div>
     <form id="upload-form" hidden>
@@ -282,6 +406,7 @@ form { display: flex; flex-direction: column; gap: 0.7rem; }
       <div class="upload-queue-header">
         <span id="upload-queue-summary">Uploading…</span>
         <span id="upload-queue-overall-pct">0%</span>
+        <button type="button" class="secondary small" id="upload-cancel-all-btn" hidden>Cancel All</button>
       </div>
       <div class="upload-queue-overall-bar">
         <div class="upload-queue-overall-fill" id="upload-queue-overall-fill"></div>
@@ -384,6 +509,19 @@ document.getElementById("logout-btn").onclick = async () => {
   location.reload();
 };
 
+function formatDate(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return time;
+  const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return sameYear ? dateStr : dateStr + ", " + d.getFullYear();
+}
+
 async function loadFiles(rel) {
   const data = await api(base + "/files?path=" + encodeURIComponent(rel));
   currentRel = data.path;
@@ -392,7 +530,7 @@ async function loadFiles(rel) {
   list.innerHTML = "";
   if (currentRel) {
     const up = document.createElement("div");
-    up.className = "entry dir";
+    up.className = "entry up";
     up.textContent = ".. (up)";
     const parts = currentRel.split("/");
     parts.pop();
@@ -402,13 +540,25 @@ async function loadFiles(rel) {
   data.entries.forEach((e) => {
     const el = document.createElement("div");
     const relPath = currentRel ? currentRel + "/" + e.name : e.name;
+
+    const nameRow = document.createElement("div");
+    nameRow.className = "entry-name-row";
+    const meta = document.createElement("div");
+    meta.className = "entry-meta";
+
+    const dateSpan = document.createElement("span");
+    dateSpan.className = "date-added";
+    dateSpan.textContent = formatDate(e.addedAt);
+    meta.appendChild(dateSpan);
+
     if (e.isDir) {
       el.className = "entry dir";
       const nameSpan = document.createElement("span");
       nameSpan.className = "name";
       nameSpan.textContent = "\u{1F4C1} " + e.name;
       nameSpan.onclick = () => loadFiles(relPath);
-      el.appendChild(nameSpan);
+      nameRow.appendChild(nameSpan);
+
       const zipBtn = document.createElement("button");
       zipBtn.className = "secondary small zip-btn";
       zipBtn.textContent = "ZIP";
@@ -417,7 +567,7 @@ async function loadFiles(rel) {
         evt.stopPropagation();
         window.location.href = base + "/download-zip?path=" + encodeURIComponent(relPath);
       };
-      el.appendChild(zipBtn);
+      meta.appendChild(zipBtn);
     } else {
       el.className = "entry file";
       const kind = previewKind(e.name);
@@ -428,20 +578,30 @@ async function loadFiles(rel) {
         nameSpan.onclick = () =>
           openPreview(e.name, base + "/preview?path=" + encodeURIComponent(relPath), kind);
       }
-      el.appendChild(nameSpan);
+      nameRow.appendChild(nameSpan);
+
       const sizeSpan = document.createElement("span");
       sizeSpan.className = "size";
       sizeSpan.textContent = formatSize(e.size);
-      el.appendChild(sizeSpan);
+      meta.appendChild(sizeSpan);
+
       if (permission !== "write") {
         const link = document.createElement("a");
         link.href = base + "/download?path=" + encodeURIComponent(relPath);
         link.textContent = "Download";
-        el.appendChild(link);
+        meta.appendChild(link);
       }
     }
+    el.appendChild(nameRow);
+    el.appendChild(meta);
     list.appendChild(el);
   });
+  if (!data.entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-state";
+    empty.textContent = "This folder is empty.";
+    list.appendChild(empty);
+  }
 }
 
 function previewKind(name) {
@@ -507,7 +667,9 @@ function formatSize(bytes) {
 // still going over the wire" from "server is writing to disk", since large
 // files can sit at 100% for a while once the browser is done sending but
 // before the server has finished flushing to disk and responding.
-function uploadFileWithProgress(url, file, onProgress) {
+// `onXhr` is invoked synchronously with the XHR instance so the caller can
+// keep a reference around to abort it later (e.g. a per-file cancel button).
+function uploadFileWithProgress(url, file, onProgress, onXhr) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
@@ -531,10 +693,49 @@ function uploadFileWithProgress(url, file, onProgress) {
       }
     };
     xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.onabort = () => reject(new UploadCancelledError());
     const formData = new FormData();
     formData.append("files", file);
     xhr.send(formData);
+    onXhr(xhr);
   });
+}
+
+class UploadCancelledError extends Error {
+  constructor() {
+    super("Cancelled");
+    this.name = "UploadCancelledError";
+  }
+}
+
+// Retries a transient failure (e.g. a network drive briefly dropping mid-
+// batch) a couple of times before giving up, so a one-off I/O hiccup doesn't
+// fail an otherwise-fine upload. Cancellation always wins over a retry.
+const UPLOAD_MAX_ATTEMPTS = 3;
+const UPLOAD_RETRY_DELAY_MS = 800;
+
+async function uploadWithRetries(url, file, controller, onEvent) {
+  for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt++) {
+    if (controller.cancelled) throw new UploadCancelledError();
+    try {
+      await uploadFileWithProgress(
+        url,
+        file,
+        (progress) => onEvent({ type: "progress", ...progress }),
+        (xhr) => {
+          controller.xhr = xhr;
+        }
+      );
+      return;
+    } catch (err) {
+      controller.xhr = null;
+      if (controller.cancelled || err instanceof UploadCancelledError) throw new UploadCancelledError();
+      if (attempt === UPLOAD_MAX_ATTEMPTS) throw err;
+      onEvent({ type: "retrying", attempt: attempt + 1, maxAttempts: UPLOAD_MAX_ATTEMPTS });
+      await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
+      if (controller.cancelled) throw new UploadCancelledError();
+    }
+  }
 }
 
 function buildUploadRow(file) {
@@ -542,40 +743,54 @@ function buildUploadRow(file) {
   row.className = "upload-item";
   row.dataset.state = "queued";
 
+  const top = document.createElement("div");
+  top.className = "upload-item-top";
+
   const icon = document.createElement("span");
   icon.className = "upload-item-icon";
-  row.appendChild(icon);
+  top.appendChild(icon);
 
-  const main = document.createElement("div");
-  main.className = "upload-item-main";
-
-  const nameRow = document.createElement("div");
-  nameRow.className = "upload-item-name-row";
   const name = document.createElement("span");
   name.className = "upload-item-name";
   name.textContent = file.name;
-  nameRow.appendChild(name);
+  top.appendChild(name);
+
   const size = document.createElement("span");
   size.className = "upload-item-size";
   size.textContent = formatSize(file.size);
-  nameRow.appendChild(size);
-  main.appendChild(nameRow);
+  top.appendChild(size);
+
+  const status = document.createElement("span");
+  status.className = "upload-item-status";
+  status.textContent = "Waiting…";
+  top.appendChild(status);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "upload-item-cancel";
+  cancelBtn.title = "Cancel this upload";
+  cancelBtn.textContent = "✕";
+  top.appendChild(cancelBtn);
+
+  row.appendChild(top);
+
+  const bottom = document.createElement("div");
+  bottom.className = "upload-item-bottom";
 
   const bar = document.createElement("div");
   bar.className = "upload-item-bar";
   const fill = document.createElement("div");
   fill.className = "upload-item-bar-fill";
   bar.appendChild(fill);
-  main.appendChild(bar);
+  bottom.appendChild(bar);
 
-  row.appendChild(main);
+  const errorEl = document.createElement("div");
+  errorEl.className = "upload-item-error";
+  bottom.appendChild(errorEl);
 
-  const status = document.createElement("span");
-  status.className = "upload-item-status";
-  status.textContent = "Waiting…";
-  row.appendChild(status);
+  row.appendChild(bottom);
 
-  return { row, fill, status };
+  return { row, fill, status, cancelBtn, errorEl };
 }
 
 async function uploadFilesOneByOne(files) {
@@ -584,35 +799,87 @@ async function uploadFilesOneByOne(files) {
   const summary = document.getElementById("upload-queue-summary");
   const overallFill = document.getElementById("upload-queue-overall-fill");
   const overallPct = document.getElementById("upload-queue-overall-pct");
+  const cancelAllBtn = document.getElementById("upload-cancel-all-btn");
 
   const total = files.length;
   queueList.innerHTML = "";
   overallFill.style.width = "0%";
   overallPct.textContent = "0%";
   queue.hidden = false;
+  cancelAllBtn.hidden = false;
+  cancelAllBtn.disabled = false;
 
-  const rows = files.map((file) => {
+  // Tracks cancellation per file so both a queued (not-yet-started) file and
+  // an in-flight one can be cancelled the same way.
+  const controllers = files.map(() => ({ cancelled: false, xhr: null }));
+  let cancelledAll = false;
+
+  function cancelAt(i) {
+    const c = controllers[i];
+    if (c.cancelled) return;
+    c.cancelled = true;
+    if (c.xhr) {
+      // In-flight request: aborting it triggers the catch block below.
+      c.xhr.abort();
+    } else {
+      // Not yet started, or waiting between retry attempts: nothing to
+      // abort, so reflect the cancellation immediately ourselves.
+      rows[i].row.dataset.state = "cancelled";
+      rows[i].status.textContent = "Cancelled";
+    }
+  }
+
+  const rows = files.map((file, i) => {
     const built = buildUploadRow(file);
+    built.cancelBtn.onclick = () => cancelAt(i);
     queueList.appendChild(built.row);
     return built;
   });
 
+  cancelAllBtn.onclick = () => {
+    cancelledAll = true;
+    cancelAllBtn.disabled = true;
+    for (let i = 0; i < total; i++) {
+      const rowState = rows[i].row.dataset.state;
+      if (rowState === "done" || rowState === "error" || rowState === "cancelled") continue;
+      cancelAt(i);
+    }
+  };
+
   let completedBytes = 0;
   const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
   let failures = 0;
+  let cancelled = 0;
 
   for (let i = 0; i < total; i++) {
     const file = files[i];
-    const { row, fill, status } = rows[i];
+    const { row, fill, status, errorEl } = rows[i];
+
+    if (controllers[i].cancelled) {
+      row.dataset.state = "cancelled";
+      status.textContent = "Cancelled";
+      cancelled++;
+      completedBytes += file.size;
+      continue;
+    }
+
     row.dataset.state = "uploading";
     status.textContent = "0%";
     summary.textContent = `Uploading ${i + 1} of ${total}…`;
 
     try {
-      await uploadFileWithProgress(
+      await uploadWithRetries(
         base + "/upload?path=" + encodeURIComponent(currentRel),
         file,
-        ({ pct, finishing }) => {
+        controllers[i],
+        (event) => {
+          if (event.type === "retrying") {
+            row.dataset.state = "uploading";
+            fill.style.width = "0%";
+            status.textContent = `Retry ${event.attempt}/${event.maxAttempts}`;
+            return;
+          }
+          const { pct, finishing } = event;
           fill.style.width = pct + "%";
           if (finishing) {
             row.dataset.state = "finishing";
@@ -629,9 +896,16 @@ async function uploadFilesOneByOne(files) {
       fill.style.width = "100%";
       status.textContent = "Done";
     } catch (err) {
-      row.dataset.state = "error";
-      status.textContent = err.message || "Failed";
-      failures++;
+      if (err instanceof UploadCancelledError) {
+        row.dataset.state = "cancelled";
+        status.textContent = "Cancelled";
+        cancelled++;
+      } else {
+        row.dataset.state = "error";
+        status.textContent = "Failed";
+        errorEl.textContent = err.message || "Upload failed";
+        failures++;
+      }
     }
 
     completedBytes += file.size;
@@ -640,10 +914,18 @@ async function uploadFilesOneByOne(files) {
     overallPct.textContent = pctDone + "%";
   }
 
-  summary.textContent =
-    failures === 0 ? `Uploaded ${total} file${total === 1 ? "" : "s"}` : `${total - failures} of ${total} uploaded`;
+  cancelAllBtn.hidden = true;
 
-  return failures;
+  const uploaded = total - failures - cancelled;
+  if (cancelledAll) {
+    summary.textContent = `Cancelled — ${uploaded} of ${total} uploaded`;
+  } else if (failures === 0 && cancelled === 0) {
+    summary.textContent = `Uploaded ${total} file${total === 1 ? "" : "s"}`;
+  } else {
+    summary.textContent = `${uploaded} of ${total} uploaded`;
+  }
+
+  return { failures, cancelled };
 }
 
 document.getElementById("upload-form").onsubmit = async (e) => {
@@ -655,18 +937,23 @@ document.getElementById("upload-form").onsubmit = async (e) => {
   const queue = document.getElementById("upload-queue");
   statusEl.hidden = true;
 
-  const failures = await uploadFilesOneByOne(files);
+  const { failures, cancelled } = await uploadFilesOneByOne(files);
 
   setTimeout(() => {
     queue.hidden = true;
-  }, failures === 0 ? 1200 : 4000);
+  }, failures === 0 && cancelled === 0 ? 1200 : 4000);
 
-  if (failures === 0) {
+  if (failures === 0 && cancelled === 0) {
     statusEl.className = "success";
     statusEl.textContent = "Upload complete!";
+  } else if (failures === 0) {
+    statusEl.className = "error";
+    statusEl.textContent = `${cancelled} file${cancelled === 1 ? "" : "s"} cancelled.`;
   } else {
     statusEl.className = "error";
-    statusEl.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload.`;
+    statusEl.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload${
+      cancelled ? `, ${cancelled} cancelled` : ""
+    }.`;
   }
   statusEl.hidden = false;
   input.value = "";

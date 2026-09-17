@@ -422,12 +422,16 @@ function listFiles(share: Share, req: Request, res: Response) {
     const entries = fs
       .readdirSync(target, { withFileTypes: true })
       .filter((e) => !e.name.startsWith("."))
-      .map((e) => ({
-        name: e.name,
-        isDir: e.isDirectory(),
-        size: e.isDirectory() ? null : fs.statSync(path.join(target, e.name)).size,
-      }))
-      .sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+      .map((e) => {
+        const stat = fs.statSync(path.join(target, e.name));
+        return {
+          name: e.name,
+          isDir: e.isDirectory(),
+          size: e.isDirectory() ? null : stat.size,
+          addedAt: stat.mtimeMs,
+        };
+      })
+      .sort((a, b) => b.addedAt - a.addedAt);
     res.json({ path: rel.replace(/^\/+/, ""), entries });
   } catch (err: any) {
     res.status(400).json({ error: err.message });

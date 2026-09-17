@@ -29,6 +29,7 @@ const els = {
   uploadQueueSummary: document.getElementById("upload-queue-summary"),
   uploadQueueOverallFill: document.getElementById("upload-queue-overall-fill"),
   uploadQueueOverallPct: document.getElementById("upload-queue-overall-pct"),
+  uploadCancelAllBtn: document.getElementById("upload-cancel-all-btn"),
   uploadStatus: document.getElementById("upload-status"),
   previewOverlay: document.getElementById("preview-overlay"),
   previewTitle: document.getElementById("preview-title"),
@@ -133,8 +134,8 @@ function renderShares(shares) {
   els.sharesList.innerHTML = "";
   if (!shares.length) {
     const empty = document.createElement("div");
-    empty.className = "entry";
-    empty.textContent = "No folders shared yet.";
+    empty.className = "entry empty-state";
+    empty.textContent = "No folders shared yet. Tap “+ Add Folder” to get started.";
     els.sharesList.appendChild(empty);
     return;
   }
@@ -294,6 +295,12 @@ async function loadBrowse(dirPath) {
     el.onclick = () => loadBrowse(joinPath(data.path, name));
     els.browseList.appendChild(el);
   });
+  if (!data.entries.length && !(data.parent && data.parent !== data.path)) {
+    const empty = document.createElement("div");
+    empty.className = "entry empty-state";
+    empty.textContent = "No subfolders here.";
+    els.browseList.appendChild(empty);
+  }
 }
 
 function joinPath(base, name) {
@@ -376,6 +383,10 @@ async function loadFiles(rel) {
       nameSpan.textContent = "\u{1F4C1} " + e.name;
       nameSpan.onclick = () => loadFiles(relPath);
       el.appendChild(nameSpan);
+      const dateSpan = document.createElement("span");
+      dateSpan.className = "date-added";
+      dateSpan.textContent = formatDate(e.addedAt);
+      el.appendChild(dateSpan);
       const zipBtn = document.createElement("button");
       zipBtn.className = "secondary small zip-btn";
       zipBtn.textContent = "ZIP";
@@ -401,6 +412,10 @@ async function loadFiles(rel) {
           );
       }
       el.appendChild(nameSpan);
+      const dateSpan = document.createElement("span");
+      dateSpan.className = "date-added";
+      dateSpan.textContent = formatDate(e.addedAt);
+      el.appendChild(dateSpan);
       const sizeSpan = document.createElement("span");
       sizeSpan.className = "size";
       sizeSpan.textContent = formatSize(e.size);
@@ -414,6 +429,12 @@ async function loadFiles(rel) {
     }
     els.filesList.appendChild(el);
   });
+  if (!data.entries.length) {
+    const empty = document.createElement("div");
+    empty.className = "entry empty-state";
+    empty.textContent = "This folder is empty.";
+    els.filesList.appendChild(empty);
+  }
 }
 
 // ---- Preview ----
@@ -461,6 +482,19 @@ els.previewOverlay.onclick = (e) => {
   if (e.target === els.previewOverlay) closePreview();
 };
 
+function formatDate(ms) {
+  if (!ms) return "";
+  const d = new Date(ms);
+  const now = new Date();
+  const sameDay =
+    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+  if (sameDay) return time;
+  const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const sameYear = d.getFullYear() === now.getFullYear();
+  return sameYear ? dateStr : dateStr + ", " + d.getFullYear();
+}
+
 function formatSize(bytes) {
   if (bytes == null) return "";
   const units = ["B", "KB", "MB", "GB"];
@@ -476,7 +510,9 @@ function formatSize(bytes) {
 // still going over the wire" from "server is writing to disk", since large
 // files can sit at 100% for a while once the browser is done sending but
 // before the server has finished flushing to disk and responding.
-function uploadFileWithProgress(url, file, onProgress) {
+// `onXhr` is invoked synchronously with the XHR instance so the caller can
+// keep a reference around to abort it later (e.g. a per-file cancel button).
+function uploadFileWithProgress(url, file, onProgress, onXhr) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", url);
@@ -500,10 +536,49 @@ function uploadFileWithProgress(url, file, onProgress) {
       }
     };
     xhr.onerror = () => reject(new Error("Upload failed"));
+    xhr.onabort = () => reject(new UploadCancelledError());
     const formData = new FormData();
     formData.append("files", file);
     xhr.send(formData);
+    onXhr(xhr);
   });
+}
+
+class UploadCancelledError extends Error {
+  constructor() {
+    super("Cancelled");
+    this.name = "UploadCancelledError";
+  }
+}
+
+// Retries a transient failure (e.g. a network drive briefly dropping mid-
+// batch) a couple of times before giving up, so a one-off I/O hiccup doesn't
+// fail an otherwise-fine upload. Cancellation always wins over a retry.
+const UPLOAD_MAX_ATTEMPTS = 3;
+const UPLOAD_RETRY_DELAY_MS = 800;
+
+async function uploadWithRetries(url, file, controller, onEvent) {
+  for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt++) {
+    if (controller.cancelled) throw new UploadCancelledError();
+    try {
+      await uploadFileWithProgress(
+        url,
+        file,
+        (progress) => onEvent({ type: "progress", ...progress }),
+        (xhr) => {
+          controller.xhr = xhr;
+        }
+      );
+      return;
+    } catch (err) {
+      controller.xhr = null;
+      if (controller.cancelled || err instanceof UploadCancelledError) throw new UploadCancelledError();
+      if (attempt === UPLOAD_MAX_ATTEMPTS) throw err;
+      onEvent({ type: "retrying", attempt: attempt + 1, maxAttempts: UPLOAD_MAX_ATTEMPTS });
+      await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
+      if (controller.cancelled) throw new UploadCancelledError();
+    }
+  }
 }
 
 function buildUploadRow(file) {
@@ -511,40 +586,54 @@ function buildUploadRow(file) {
   row.className = "upload-item";
   row.dataset.state = "queued";
 
+  const top = document.createElement("div");
+  top.className = "upload-item-top";
+
   const icon = document.createElement("span");
   icon.className = "upload-item-icon";
-  row.appendChild(icon);
+  top.appendChild(icon);
 
-  const main = document.createElement("div");
-  main.className = "upload-item-main";
-
-  const nameRow = document.createElement("div");
-  nameRow.className = "upload-item-name-row";
   const name = document.createElement("span");
   name.className = "upload-item-name";
   name.textContent = file.name;
-  nameRow.appendChild(name);
+  top.appendChild(name);
+
   const size = document.createElement("span");
   size.className = "upload-item-size";
   size.textContent = formatSize(file.size);
-  nameRow.appendChild(size);
-  main.appendChild(nameRow);
+  top.appendChild(size);
+
+  const status = document.createElement("span");
+  status.className = "upload-item-status";
+  status.textContent = "Waiting…";
+  top.appendChild(status);
+
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "upload-item-cancel";
+  cancelBtn.title = "Cancel this upload";
+  cancelBtn.textContent = "✕";
+  top.appendChild(cancelBtn);
+
+  row.appendChild(top);
+
+  const bottom = document.createElement("div");
+  bottom.className = "upload-item-bottom";
 
   const bar = document.createElement("div");
   bar.className = "upload-item-bar";
   const fill = document.createElement("div");
   fill.className = "upload-item-bar-fill";
   bar.appendChild(fill);
-  main.appendChild(bar);
+  bottom.appendChild(bar);
 
-  row.appendChild(main);
+  const errorEl = document.createElement("div");
+  errorEl.className = "upload-item-error";
+  bottom.appendChild(errorEl);
 
-  const status = document.createElement("span");
-  status.className = "upload-item-status";
-  status.textContent = "Waiting…";
-  row.appendChild(status);
+  row.appendChild(bottom);
 
-  return { row, fill, status };
+  return { row, fill, status, cancelBtn, errorEl };
 }
 
 async function uploadFilesOneByOne(share, files) {
@@ -553,29 +642,80 @@ async function uploadFilesOneByOne(share, files) {
   els.uploadQueueOverallFill.style.width = "0%";
   els.uploadQueueOverallPct.textContent = "0%";
   els.uploadQueue.hidden = false;
+  els.uploadCancelAllBtn.hidden = false;
+  els.uploadCancelAllBtn.disabled = false;
 
-  const rows = files.map((file) => {
+  // Tracks cancellation per file so both a queued (not-yet-started) file and
+  // an in-flight one can be cancelled the same way.
+  const controllers = files.map(() => ({ cancelled: false, xhr: null }));
+  let cancelledAll = false;
+
+  function cancelAt(i) {
+    const c = controllers[i];
+    if (c.cancelled) return;
+    c.cancelled = true;
+    if (c.xhr) {
+      // In-flight request: aborting it triggers the catch block below.
+      c.xhr.abort();
+    } else {
+      // Not yet started, or waiting between retry attempts: nothing to
+      // abort, so reflect the cancellation immediately ourselves.
+      rows[i].row.dataset.state = "cancelled";
+      rows[i].status.textContent = "Cancelled";
+    }
+  }
+
+  const rows = files.map((file, i) => {
     const built = buildUploadRow(file);
+    built.cancelBtn.onclick = () => cancelAt(i);
     els.uploadQueueList.appendChild(built.row);
     return built;
   });
 
+  els.uploadCancelAllBtn.onclick = () => {
+    cancelledAll = true;
+    els.uploadCancelAllBtn.disabled = true;
+    for (let i = 0; i < total; i++) {
+      const rowState = rows[i].row.dataset.state;
+      if (rowState === "done" || rowState === "error" || rowState === "cancelled") continue;
+      cancelAt(i);
+    }
+  };
+
   let completedBytes = 0;
   const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
   let failures = 0;
+  let cancelled = 0;
 
   for (let i = 0; i < total; i++) {
     const file = files[i];
-    const { row, fill, status } = rows[i];
+    const { row, fill, status, errorEl } = rows[i];
+
+    if (controllers[i].cancelled) {
+      row.dataset.state = "cancelled";
+      status.textContent = "Cancelled";
+      cancelled++;
+      completedBytes += file.size;
+      continue;
+    }
+
     row.dataset.state = "uploading";
     status.textContent = "0%";
     els.uploadQueueSummary.textContent = `Uploading ${i + 1} of ${total}…`;
 
     try {
-      await uploadFileWithProgress(
+      await uploadWithRetries(
         `/api/shares/${share.id}/upload?path=` + encodeURIComponent(state.currentRel),
         file,
-        ({ pct, finishing }) => {
+        controllers[i],
+        (event) => {
+          if (event.type === "retrying") {
+            row.dataset.state = "uploading";
+            fill.style.width = "0%";
+            status.textContent = `Retry ${event.attempt}/${event.maxAttempts}`;
+            return;
+          }
+          const { pct, finishing } = event;
           fill.style.width = pct + "%";
           if (finishing) {
             row.dataset.state = "finishing";
@@ -592,9 +732,16 @@ async function uploadFilesOneByOne(share, files) {
       fill.style.width = "100%";
       status.textContent = "Done";
     } catch (err) {
-      row.dataset.state = "error";
-      status.textContent = err.message || "Failed";
-      failures++;
+      if (err instanceof UploadCancelledError) {
+        row.dataset.state = "cancelled";
+        status.textContent = "Cancelled";
+        cancelled++;
+      } else {
+        row.dataset.state = "error";
+        status.textContent = "Failed";
+        errorEl.textContent = err.message || "Upload failed";
+        failures++;
+      }
     }
 
     completedBytes += file.size;
@@ -603,10 +750,18 @@ async function uploadFilesOneByOne(share, files) {
     els.uploadQueueOverallPct.textContent = overallPct + "%";
   }
 
-  els.uploadQueueSummary.textContent =
-    failures === 0 ? `Uploaded ${total} file${total === 1 ? "" : "s"}` : `${total - failures} of ${total} uploaded`;
+  els.uploadCancelAllBtn.hidden = true;
 
-  return failures;
+  const uploaded = total - failures - cancelled;
+  if (cancelledAll) {
+    els.uploadQueueSummary.textContent = `Cancelled — ${uploaded} of ${total} uploaded`;
+  } else if (failures === 0 && cancelled === 0) {
+    els.uploadQueueSummary.textContent = `Uploaded ${total} file${total === 1 ? "" : "s"}`;
+  } else {
+    els.uploadQueueSummary.textContent = `${uploaded} of ${total} uploaded`;
+  }
+
+  return { failures, cancelled };
 }
 
 els.uploadForm.onsubmit = async (e) => {
@@ -616,18 +771,23 @@ els.uploadForm.onsubmit = async (e) => {
   const files = Array.from(els.uploadInput.files);
 
   els.uploadStatus.hidden = true;
-  const failures = await uploadFilesOneByOne(share, files);
+  const { failures, cancelled } = await uploadFilesOneByOne(share, files);
 
   setTimeout(() => {
     els.uploadQueue.hidden = true;
-  }, failures === 0 ? 1200 : 4000);
+  }, failures === 0 && cancelled === 0 ? 1200 : 4000);
 
-  if (failures === 0) {
+  if (failures === 0 && cancelled === 0) {
     els.uploadStatus.className = "success";
     els.uploadStatus.textContent = "Upload complete!";
+  } else if (failures === 0) {
+    els.uploadStatus.className = "error";
+    els.uploadStatus.textContent = `${cancelled} file${cancelled === 1 ? "" : "s"} cancelled.`;
   } else {
     els.uploadStatus.className = "error";
-    els.uploadStatus.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload.`;
+    els.uploadStatus.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload${
+      cancelled ? `, ${cancelled} cancelled` : ""
+    }.`;
   }
   els.uploadStatus.hidden = false;
   els.uploadInput.value = "";
