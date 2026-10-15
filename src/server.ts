@@ -222,6 +222,8 @@ app.use(cookieParser());
 // per-folder /share/<id> links, which use their own password + session.
 app.use((req: Request, res: Response, next: NextFunction) => {
   if (req.path === "/share" || req.path.startsWith("/share/")) return next();
+  // Static UI code shared by the admin app and public share pages; no data.
+  if (req.path.startsWith("/assets/")) return next();
 
   const failureKey = `admin:${req.ip}`;
   if (isLockedOut(failureKey)) {
@@ -246,6 +248,7 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   res.status(401).send("Authentication required");
 });
 
+app.use("/assets", express.static(path.join(__dirname, "..", "public-common")));
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "..", "public")));
 
@@ -467,9 +470,14 @@ function downloadFolderZip(share: Share, req: Request, res: Response) {
       return res.status(400).send("Not a folder");
     }
     const folderName = rel ? path.basename(target) : share.name;
-    res.set("Content-Type", "application/zip");
-    res.set("Content-Disposition", `attachment; filename="${folderName.replace(/"/g, "")}.zip"`);
+    // res.attachment() emits an RFC 5987 `filename*=UTF-8''...` parameter.
+    // Writing a non-ASCII name (e.g. Bengali) straight into the header makes
+    // Node throw "Invalid character in header content", which the browser
+    // then surfaces as ERR_INVALID_RESPONSE.
+    res.attachment(folderName + ".zip");
     const archive = archiver("zip", { zlib: { level: 6 } });
+    // A file that vanishes mid-walk shouldn't kill the whole download.
+    archive.on("warning", (err) => console.warn("ZIP warning:", err.message));
     // Once headers are sent, the only way left to signal a mid-stream
     // failure to the client is to abort the connection.
     archive.on("error", (err) => {
@@ -621,6 +629,8 @@ app.post("/api/tunnel/stop", (_req: Request, res: Response) => {
 });
 
 app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  // e.g. a download whose client disconnected mid-stream: nothing left to send.
+  if (res.headersSent) return res.end();
   if (err?.code === "LIMIT_FILE_SIZE") {
     const limitMB = (req as any).uploadLimitMB;
     return res

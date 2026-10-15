@@ -30,6 +30,7 @@ RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
 COPY public ./public
 COPY public-share ./public-share
+COPY public-common ./public-common
 COPY --from=cloudflared /cloudflared /usr/local/bin/cloudflared
 
 RUN addgroup -S app && adduser -S app -G app \

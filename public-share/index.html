@@ -2,486 +2,161 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Shared Folder</title>
-<style>
-:root {
-  color-scheme: light dark;
-  --bg: #f3f4f6;
-  --surface: #ffffff;
-  --surface-hover: rgba(37, 99, 235, 0.06);
-  --fg: #16181d;
-  --fg-muted: #6b7280;
-  --border: #e3e5e9;
-  --accent: #2563eb;
-  --accent-hover: #1d4ed8;
-  --accent-soft: rgba(37, 99, 235, 0.1);
-  --danger: #dc2626;
-  --danger-soft: rgba(220, 38, 38, 0.1);
-  --ok: #16a34a;
-  --radius-lg: 14px;
-  --radius-md: 10px;
-  --radius-sm: 6px;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 6px rgba(16, 24, 40, 0.04);
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #121316;
-    --surface: #1c1e23;
-    --surface-hover: rgba(59, 130, 246, 0.1);
-    --fg: #f2f3f5;
-    --fg-muted: #9aa0aa;
-    --border: #2b2e34;
-    --accent: #3b82f6;
-    --accent-hover: #60a5fa;
-    --accent-soft: rgba(59, 130, 246, 0.16);
-    --danger: #f87171;
-    --danger-soft: rgba(248, 113, 113, 0.14);
-    --ok: #34d399;
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 14px rgba(0, 0, 0, 0.25);
-  }
-}
-* { box-sizing: border-box; min-width: 0; }
-html, body { overflow-x: hidden; }
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: var(--bg);
-  color: var(--fg);
-  -webkit-font-smoothing: antialiased;
-}
-:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-header {
-  padding: 0.9rem 1.25rem;
-  border-bottom: 1px solid var(--border);
-  background: var(--surface);
-}
-h1 { margin: 0; font-size: 1.05rem; font-weight: 700; letter-spacing: -0.01em; }
-main { max-width: 480px; margin: 1.25rem auto; padding: 0 0.85rem 2rem; }
-#login-view, #browser-view {
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  padding: 1.1rem 1rem;
-}
-#login-desc { margin-top: 0; font-size: 0.9rem; color: var(--fg-muted); }
-.path-bar {
-  font-family: ui-monospace, monospace;
-  font-size: 0.82rem;
-  padding: 0.5rem 0.6rem;
-  background: rgba(127,127,127,0.08);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  margin-bottom: 0;
-  word-break: break-all;
-  flex: 1;
-  min-width: 0;
-}
-.list {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  max-height: 420px;
-  overflow-y: auto;
-  overflow-x: hidden;
-  margin: 0.75rem 0;
-  background: rgba(127,127,127,0.02);
-}
-.list::-webkit-scrollbar { width: 8px; }
-.list::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.3); border-radius: 999px; }
-.list::-webkit-scrollbar-track { background: transparent; }
-
-/* Every row is exactly two lines: the name, then a meta line with
-   date/size/action. Wrapping (never horizontal scroll) absorbs long names. */
-.entry {
-  padding: 0.65rem 0.8rem;
-  border-bottom: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.entry:last-child { border-bottom: none; }
-.entry-name-row {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.5rem;
-  cursor: default;
-}
-.entry.dir .entry-name-row,
-.entry.dir .name { cursor: pointer; }
-.entry .name {
-  flex: 1;
-  min-width: 0;
-  overflow-wrap: anywhere;
-  font-weight: 500;
-  font-size: 0.9rem;
-}
-.entry.file .name.previewable:hover { color: var(--accent); text-decoration: underline; }
-.entry-meta {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  padding-left: 1.55rem;
-  font-size: 0.78rem;
-  color: var(--fg-muted);
-}
-.entry-meta .date-added,
-.entry-meta .size { white-space: nowrap; }
-.entry-meta a,
-.entry-meta .zip-btn { margin-left: auto; flex-shrink: 0; }
-.entry.dir:hover { background: var(--surface-hover); }
-.entry.up { cursor: pointer; color: var(--fg-muted); }
-.entry.up:hover { background: var(--surface-hover); }
-.path-bar-row { display: flex; align-items: center; gap: 0.5rem; }
-input[type=password], input[type=file] {
-  padding: 0.6rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg);
-  color: var(--fg);
-  font-size: 0.9rem;
-  width: 100%;
-}
-button {
-  background: var(--accent);
-  color: white;
-  border: none;
-  padding: 0.6rem 1.2rem;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s ease, transform 0.05s ease;
-}
-button:hover { background: var(--accent-hover); }
-button:active { transform: translateY(1px); }
-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
-button.link { background: none; color: var(--accent); padding: 0; text-decoration: underline; font-weight: 400; }
-button.secondary { background: transparent; color: var(--fg); border: 1px solid var(--border); }
-button.secondary:hover { background: rgba(127,127,127,0.08); }
-button.small { padding: 0.35rem 0.65rem; font-size: 0.8rem; }
-form { display: flex; flex-direction: column; gap: 0.7rem; }
-#upload-form { flex-direction: column; align-items: stretch; gap: 0.6rem; }
-#upload-form button { width: 100%; }
-[hidden] { display: none !important; }
-.error { color: var(--danger); font-size: 0.85rem; font-weight: 500; }
-.success { color: var(--ok); font-size: 0.85rem; font-weight: 500; }
-.upload-queue {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  padding: 0.8rem 0.85rem;
-  margin: 0.6rem 0;
-  background: rgba(127,127,127,0.03);
-  animation: fade-in 0.2s ease;
-}
-.upload-queue-header {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.82rem;
-  margin-bottom: 0.5rem;
-}
-#upload-queue-summary { flex: 1; min-width: 0; font-weight: 500; }
-#upload-queue-overall-pct { font-variant-numeric: tabular-nums; color: var(--fg-muted); }
-#upload-cancel-all-btn { flex-shrink: 0; margin-left: auto; }
-.upload-queue-overall-bar {
-  height: 6px;
-  border-radius: 3px;
-  background: rgba(127,127,127,0.18);
-  overflow: hidden;
-  margin-bottom: 0.7rem;
-}
-.upload-queue-overall-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: 3px;
-  width: 0%;
-  transition: width 0.2s ease;
-}
-.upload-queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.55rem;
-  max-height: 260px;
-  overflow-y: auto;
-}
-.upload-queue-list::-webkit-scrollbar { width: 8px; }
-.upload-queue-list::-webkit-scrollbar-thumb { background: rgba(127,127,127,0.3); border-radius: 999px; }
-/* Every upload row is exactly two lines: name/size/status/cancel on top,
-   then a progress bar OR (only on failure) the error message below —
-   never both fighting for the same line, so long error text can never
-   overlap neighboring rows. */
-.upload-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.28rem;
-  animation: slide-in 0.2s ease;
-}
-.upload-item-top {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.upload-item-icon {
-  width: 1.2rem;
-  height: 1.2rem;
-  flex-shrink: 0;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.7rem;
-  position: relative;
-}
-.upload-item[data-state="queued"] .upload-item-icon { background: rgba(127,127,127,0.2); }
-.upload-item[data-state="uploading"] .upload-item-icon,
-.upload-item[data-state="finishing"] .upload-item-icon {
-  border: 2px solid rgba(37,99,235,0.25);
-  border-top-color: var(--accent);
-  animation: spin 0.8s linear infinite;
-}
-.upload-item[data-state="done"] .upload-item-icon {
-  background: var(--ok);
-  color: white;
-  animation: pop-in 0.25s ease;
-}
-.upload-item[data-state="done"] .upload-item-icon::after { content: "\2713"; }
-.upload-item[data-state="error"] .upload-item-icon {
-  background: var(--danger);
-  color: white;
-}
-.upload-item[data-state="error"] .upload-item-icon::after { content: "\2715"; }
-.upload-item[data-state="cancelled"] .upload-item-icon { background: rgba(127,127,127,0.35); color: var(--fg); }
-.upload-item[data-state="cancelled"] .upload-item-icon::after { content: "\2715"; }
-.upload-item-name {
-  flex: 1;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  font-weight: 500;
-  font-size: 0.83rem;
-}
-.upload-item-size { opacity: 0.55; flex-shrink: 0; font-size: 0.73rem; }
-.upload-item-bottom { padding-left: 1.7rem; }
-.upload-item-bar {
-  height: 5px;
-  border-radius: 3px;
-  background: rgba(127,127,127,0.18);
-  overflow: hidden;
-}
-.upload-item-bar-fill {
-  height: 100%;
-  width: 0%;
-  background: var(--accent);
-  border-radius: 3px;
-  transition: width 0.15s linear;
-}
-.upload-item[data-state="finishing"] .upload-item-bar-fill {
-  background: repeating-linear-gradient(45deg, var(--accent), var(--accent) 8px, rgba(37,99,235,0.55) 8px, rgba(37,99,235,0.55) 16px);
-  background-size: 200% 100%;
-  animation: barber-pole 0.7s linear infinite;
-}
-.upload-item[data-state="done"] .upload-item-bar-fill { background: var(--ok); }
-.upload-item[data-state="cancelled"] .upload-item-bar-fill { background: rgba(127,127,127,0.5); }
-.upload-item-error {
-  display: none;
-  font-size: 0.73rem;
-  color: var(--danger);
-  overflow-wrap: anywhere;
-}
-.upload-item[data-state="error"] .upload-item-bar { display: none; }
-.upload-item[data-state="error"] .upload-item-error { display: block; }
-.upload-item-status {
-  font-size: 0.72rem;
-  min-width: 2.6em;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
-  flex-shrink: 0;
-  white-space: nowrap;
-}
-.upload-item[data-state="error"] .upload-item-status { color: var(--danger); opacity: 1; }
-.upload-item[data-state="done"] .upload-item-status { color: var(--ok); opacity: 1; }
-.upload-item[data-state="cancelled"] .upload-item-status { opacity: 0.6; }
-.upload-item-cancel {
-  background: transparent;
-  color: var(--fg-muted);
-  border: none;
-  width: 1.5rem;
-  height: 1.5rem;
-  padding: 0;
-  font-size: 0.7rem;
-  border-radius: 50%;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.upload-item-cancel:hover { background: var(--danger-soft); color: var(--danger); }
-.upload-item[data-state="done"] .upload-item-cancel,
-.upload-item[data-state="error"] .upload-item-cancel,
-.upload-item[data-state="cancelled"] .upload-item-cancel { visibility: hidden; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@keyframes pop-in { from { transform: scale(0.5); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-@keyframes slide-in { from { transform: translateY(-4px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-@keyframes barber-pole { from { background-position: 0 0; } to { background-position: 32px 0; } }
-.footer-row { margin-top: 1rem; text-align: center; }
-.upload-limit-note { font-size: 0.78rem; color: var(--fg-muted); margin: 0.5rem 0; }
-.empty-state { color: var(--fg-muted); font-style: italic; text-align: center; padding: 1.5rem 0.85rem; }
-.preview-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0,0,0,0.75);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  z-index: 100;
-  animation: fade-in 0.15s ease;
-}
-.preview-box {
-  background: var(--surface);
-  color: var(--fg);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow);
-  max-width: min(94vw, 900px);
-  max-height: 90vh;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.preview-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.7rem 1rem;
-  border-bottom: 1px solid var(--border);
-}
-.preview-header span { font-size: 0.88rem; font-weight: 500; word-break: break-all; }
-.preview-body {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-  overflow: auto;
-}
-.preview-body img { max-width: 100%; max-height: 80vh; display: block; border-radius: var(--radius-sm); }
-.preview-body video { max-width: 100%; max-height: 80vh; }
-.preview-body audio { width: 100%; }
-.preview-body iframe { width: 100%; height: 80vh; border: none; }
-</style>
+<link rel="stylesheet" href="/assets/drive.css" />
 </head>
 <body>
-<header><h1 id="page-title">Shared Folder</h1></header>
-<main>
-  <div id="login-view">
-    <p id="login-desc">Enter the password to access this folder.</p>
-    <form id="login-form">
-      <input type="password" id="password-input" placeholder="Password" autofocus />
-      <button type="submit">Unlock</button>
-      <div class="error" id="login-error" hidden></div>
-    </form>
-  </div>
-
-  <div id="browser-view" hidden>
-    <div class="path-bar-row">
-      <div class="path-bar" id="current-rel"></div>
-      <button class="secondary small" id="download-zip-btn">⬇ ZIP</button>
+<div id="login-view" class="center-page" hidden>
+  <form class="login-card" id="login-form">
+    <div id="login-logo"></div>
+    <h1 id="login-title">Shared folder</h1>
+    <p id="login-desc">Enter the password to open this folder.</p>
+    <div class="field">
+      <label for="password-input">Password</label>
+      <input type="password" id="password-input" autocomplete="current-password" required />
     </div>
-    <div class="list" id="files-list"></div>
-    <form id="upload-form" hidden>
-      <input type="file" id="upload-input" multiple />
-      <button type="submit">Upload</button>
-    </form>
-    <div class="upload-limit-note" id="upload-limit-note" hidden></div>
-    <div class="upload-queue" id="upload-queue" hidden>
-      <div class="upload-queue-header">
-        <span id="upload-queue-summary">Uploading…</span>
-        <span id="upload-queue-overall-pct">0%</span>
-        <button type="button" class="secondary small" id="upload-cancel-all-btn" hidden>Cancel All</button>
-      </div>
-      <div class="upload-queue-overall-bar">
-        <div class="upload-queue-overall-fill" id="upload-queue-overall-fill"></div>
-      </div>
-      <div class="upload-queue-list" id="upload-queue-list"></div>
-    </div>
-    <div id="upload-status" hidden></div>
-    <div class="footer-row">
-      <button class="link" id="logout-btn">Log out of this share</button>
-    </div>
-  </div>
-</main>
-
-<div id="preview-overlay" class="preview-overlay" hidden>
-  <div class="preview-box">
-    <div class="preview-header">
-      <span id="preview-title"></span>
-      <button class="link" id="preview-close-btn">Close</button>
-    </div>
-    <div class="preview-body" id="preview-body"></div>
-  </div>
+    <div class="error" id="login-error" hidden></div>
+    <button type="submit" class="btn">Open folder</button>
+  </form>
 </div>
 
+<div id="app-view" hidden>
+  <header class="app-bar">
+    <button class="icon-btn" id="menu-btn" title="Main menu" aria-label="Main menu"></button>
+    <div class="brand"><span id="brand-logo"></span><span class="brand-name" id="brand-name">Shared folder</span></div>
+    <label class="search" id="search-box">
+      <span class="icon-btn" id="search-icon" aria-hidden="true"></span>
+      <input type="search" id="search-input" placeholder="Search in this folder" autocomplete="off" />
+    </label>
+  </header>
+  <div class="layout">
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-head"><span id="drawer-logo"></span><span>Shared folder</span></div>
+      <button class="new-btn" id="new-btn" hidden></button>
+      <button class="nav-item active" id="nav-root" data-close-drawer></button>
+      <div class="sidebar-foot">
+        <div id="access-note"></div>
+        <div id="limit-note" hidden></div>
+        <button class="nav-item" id="logout-btn" style="padding-left:0"></button>
+      </div>
+    </aside>
+    <main class="main" id="main"></main>
+  </div>
+  <button class="fab" id="fab" title="Upload" aria-label="Upload" hidden></button>
+  <div class="scrim" id="scrim" hidden></div>
+</div>
+
+<script src="/assets/drive.js"></script>
 <script>
+const { h, icon, logo, toast } = Drive;
 const shareId = location.pathname.split("/")[2];
 const base = "/share/" + shareId;
-let permission = "read"; // fail closed until enterBrowser() sets the real value
-let currentRel = "";
-let maxUploadMB = null;
+const q = (rel) => "?path=" + encodeURIComponent(rel);
+let browser = null;
 
 async function api(url, opts) {
   const res = await fetch(url, opts);
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || "Request failed");
-  }
-  return res.json();
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
 }
 
-async function init() {
-  const meta = await api(base + "/meta");
-  document.getElementById("page-title").textContent = meta.name;
-  document.title = meta.name + " — Shared Folder";
-  document.getElementById("login-desc").textContent =
-    "Enter the password to access “" + meta.name + "”.";
-  maxUploadMB = meta.maxUploadMB;
-
-  const status = await api(base + "/status");
-  if (status.authenticated) {
-    enterBrowser(status.permission);
-  }
+function permissionText(p) {
+  return p === "both" ? "You can view, download and upload" : p === "read" ? "View and download only" : "Upload only";
 }
 
-function enterBrowser(currentPermission) {
-  permission = currentPermission;
-  const isWriteOnly = permission === "write";
+// Folder path lives in the URL hash so refresh/back/forward all work.
+const relFromHash = () => decodeURIComponent(location.hash.replace(/^#\/?/, ""));
+function navigate(rel) {
+  const next = "#/" + encodeURIComponent(rel);
+  if (location.hash === next || (!rel && !location.hash)) browser.load(rel);
+  else location.hash = next;
+}
+
+function showLogin(meta) {
+  document.getElementById("app-view").hidden = true;
+  document.getElementById("login-view").hidden = false;
+  document.getElementById("login-logo").replaceChildren(logo());
+  if (meta) {
+    document.getElementById("login-title").textContent = meta.name;
+    document.getElementById("login-desc").textContent = "This folder is password protected. Enter the password you were given to open it.";
+  }
+  document.getElementById("password-input").focus();
+}
+
+function enterApp(meta, permission) {
   document.getElementById("login-view").hidden = true;
-  document.getElementById("browser-view").hidden = false;
-  document.getElementById("upload-form").hidden = permission === "read";
-  const limitNote = document.getElementById("upload-limit-note");
-  limitNote.hidden = permission === "read";
-  limitNote.textContent = "Upload limit: " + maxUploadMB + " MB per file";
-  document.getElementById("current-rel").hidden = isWriteOnly;
-  document.getElementById("files-list").hidden = isWriteOnly;
-  document.getElementById("download-zip-btn").hidden = isWriteOnly;
-  if (isWriteOnly) {
-    currentRel = "";
-  } else {
-    loadFiles("");
-  }
-}
+  document.getElementById("app-view").hidden = false;
+  document.body.classList.add("has-search");
 
-document.getElementById("download-zip-btn").onclick = () => {
-  window.location.href = base + "/download-zip?path=" + encodeURIComponent(currentRel);
-};
+  document.getElementById("menu-btn").replaceChildren(icon("menu"));
+  document.getElementById("search-icon").replaceChildren(icon("search"));
+  document.getElementById("brand-logo").replaceChildren(logo());
+  document.getElementById("drawer-logo").replaceChildren(logo());
+  document.getElementById("brand-name").textContent = meta.name;
+
+  const navRoot = document.getElementById("nav-root");
+  navRoot.replaceChildren(icon("folderShared"), h("span", { text: meta.name }));
+  navRoot.title = meta.name;
+  navRoot.onclick = () => navigate("");
+
+  document.getElementById("access-note").textContent = permissionText(permission);
+  if (permission !== "read") {
+    const limit = document.getElementById("limit-note");
+    limit.hidden = false;
+    limit.textContent = "Upload limit: " + meta.maxUploadMB + " MB per file";
+  }
+
+  const logoutBtn = document.getElementById("logout-btn");
+  logoutBtn.replaceChildren(icon("logout"), h("span", { text: "Sign out" }));
+  logoutBtn.onclick = async () => {
+    await api(base + "/logout", { method: "POST" }).catch(() => {});
+    location.reload();
+  };
+
+  const shell = Drive.initShell();
+  browser = Drive.createBrowser({
+    mount: document.getElementById("main"),
+    rootName: meta.name,
+    permission,
+    maxUploadMB: meta.maxUploadMB,
+    urls: {
+      files: (rel) => base + "/files" + q(rel),
+      download: (rel) => base + "/download" + q(rel),
+      zip: (rel) => base + "/download-zip" + q(rel),
+      preview: (rel) => base + "/preview" + q(rel),
+      upload: (rel) => base + "/upload" + q(rel),
+    },
+    navigate,
+    onUnauthorized: () => location.reload(),
+  });
+
+  if (permission !== "read") {
+    const newBtn = document.getElementById("new-btn");
+    newBtn.hidden = false;
+    newBtn.replaceChildren(icon("add"), h("span", { text: "New" }));
+    newBtn.onclick = (e) => {
+      e.stopPropagation();
+      Drive.showMenu(newBtn, [{ label: "File upload", icon: "upload", onClick: () => { shell.closeDrawer(); browser.upload(); } }]);
+    };
+    const fab = document.getElementById("fab");
+    fab.hidden = false;
+    fab.replaceChildren(icon("upload"));
+    fab.onclick = () => browser.upload();
+  }
+
+  const searchInput = document.getElementById("search-input");
+  if (permission === "write") document.getElementById("search-box").hidden = true;
+  searchInput.oninput = () => browser.search(searchInput.value);
+
+  window.addEventListener("hashchange", () => {
+    searchInput.value = "";
+    browser.search("");
+    browser.load(relFromHash());
+  });
+  browser.load(relFromHash());
+}
 
 document.getElementById("login-form").onsubmit = async (e) => {
   e.preventDefault();
@@ -496,472 +171,27 @@ document.getElementById("login-form").onsubmit = async (e) => {
     });
     // Re-fetch permission fresh rather than trusting a value captured
     // before login resolved, since the two requests can race.
-    const status = await api(base + "/status");
-    enterBrowser(status.permission);
+    const [meta, status] = await Promise.all([api(base + "/meta"), api(base + "/status")]);
+    enterApp(meta, status.permission);
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.hidden = false;
   }
 };
 
-document.getElementById("logout-btn").onclick = async () => {
-  await api(base + "/logout", { method: "POST" });
-  location.reload();
-};
-
-function formatDate(ms) {
-  if (!ms) return "";
-  const d = new Date(ms);
-  const now = new Date();
-  const sameDay =
-    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  const time = d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
-  if (sameDay) return time;
-  const dateStr = d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-  const sameYear = d.getFullYear() === now.getFullYear();
-  return sameYear ? dateStr : dateStr + ", " + d.getFullYear();
-}
-
-async function loadFiles(rel) {
-  const data = await api(base + "/files?path=" + encodeURIComponent(rel));
-  currentRel = data.path;
-  document.getElementById("current-rel").textContent = "/" + currentRel;
-  const list = document.getElementById("files-list");
-  list.innerHTML = "";
-  if (currentRel) {
-    const up = document.createElement("div");
-    up.className = "entry up";
-    up.textContent = ".. (up)";
-    const parts = currentRel.split("/");
-    parts.pop();
-    up.onclick = () => loadFiles(parts.join("/"));
-    list.appendChild(up);
+(async function init() {
+  try {
+    const meta = await api(base + "/meta");
+    document.title = meta.name + " — Shared folder";
+    const status = await api(base + "/status");
+    if (status.authenticated) enterApp(meta, status.permission);
+    else showLogin(meta);
+  } catch (err) {
+    document.body.replaceChildren(
+      h("div", { class: "center-page" }, h("div", { class: "login-card" }, logo(), h("h1", { text: "Link unavailable" }), h("p", { text: err.message })))
+    );
   }
-  data.entries.forEach((e) => {
-    const el = document.createElement("div");
-    const relPath = currentRel ? currentRel + "/" + e.name : e.name;
-
-    const nameRow = document.createElement("div");
-    nameRow.className = "entry-name-row";
-    const meta = document.createElement("div");
-    meta.className = "entry-meta";
-
-    const dateSpan = document.createElement("span");
-    dateSpan.className = "date-added";
-    dateSpan.textContent = formatDate(e.addedAt);
-    meta.appendChild(dateSpan);
-
-    if (e.isDir) {
-      el.className = "entry dir";
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "name";
-      nameSpan.textContent = "\u{1F4C1} " + e.name;
-      nameSpan.onclick = () => loadFiles(relPath);
-      nameRow.appendChild(nameSpan);
-
-      const zipBtn = document.createElement("button");
-      zipBtn.className = "secondary small zip-btn";
-      zipBtn.textContent = "ZIP";
-      zipBtn.title = "Download this folder as a ZIP";
-      zipBtn.onclick = (evt) => {
-        evt.stopPropagation();
-        window.location.href = base + "/download-zip?path=" + encodeURIComponent(relPath);
-      };
-      meta.appendChild(zipBtn);
-    } else {
-      el.className = "entry file";
-      const kind = previewKind(e.name);
-      const nameSpan = document.createElement("span");
-      nameSpan.className = "name" + (kind ? " previewable" : "");
-      nameSpan.textContent = "\u{1F4C4} " + e.name;
-      if (kind && permission !== "write") {
-        nameSpan.onclick = () =>
-          openPreview(e.name, base + "/preview?path=" + encodeURIComponent(relPath), kind);
-      }
-      nameRow.appendChild(nameSpan);
-
-      const sizeSpan = document.createElement("span");
-      sizeSpan.className = "size";
-      sizeSpan.textContent = formatSize(e.size);
-      meta.appendChild(sizeSpan);
-
-      if (permission !== "write") {
-        const link = document.createElement("a");
-        link.href = base + "/download?path=" + encodeURIComponent(relPath);
-        link.textContent = "Download";
-        meta.appendChild(link);
-      }
-    }
-    el.appendChild(nameRow);
-    el.appendChild(meta);
-    list.appendChild(el);
-  });
-  if (!data.entries.length) {
-    const empty = document.createElement("div");
-    empty.className = "empty-state";
-    empty.textContent = "This folder is empty.";
-    list.appendChild(empty);
-  }
-}
-
-function previewKind(name) {
-  const ext = name.slice(name.lastIndexOf(".")).toLowerCase();
-  if ([".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".avif"].includes(ext)) return "image";
-  if ([".mp4", ".webm", ".ogv", ".mov", ".m4v"].includes(ext)) return "video";
-  if ([".mp3", ".wav", ".m4a", ".flac", ".aac", ".oga"].includes(ext)) return "audio";
-  if (ext === ".pdf") return "pdf";
-  return null;
-}
-
-const previewOverlay = document.getElementById("preview-overlay");
-const previewTitle = document.getElementById("preview-title");
-const previewBody = document.getElementById("preview-body");
-
-function openPreview(name, url, kind) {
-  previewTitle.textContent = name;
-  previewBody.innerHTML = "";
-  let el;
-  if (kind === "image") {
-    el = document.createElement("img");
-    el.src = url;
-  } else if (kind === "video") {
-    el = document.createElement("video");
-    el.src = url;
-    el.controls = true;
-    el.autoplay = true;
-  } else if (kind === "audio") {
-    el = document.createElement("audio");
-    el.src = url;
-    el.controls = true;
-    el.autoplay = true;
-  } else if (kind === "pdf") {
-    el = document.createElement("iframe");
-    el.src = url;
-  }
-  if (el) previewBody.appendChild(el);
-  previewOverlay.hidden = false;
-}
-
-function closePreview() {
-  previewOverlay.hidden = true;
-  previewBody.innerHTML = "";
-}
-
-document.getElementById("preview-close-btn").onclick = closePreview;
-previewOverlay.onclick = (e) => {
-  if (e.target === previewOverlay) closePreview();
-};
-
-function formatSize(bytes) {
-  if (bytes == null) return "";
-  const units = ["B", "KB", "MB", "GB"];
-  let i = 0;
-  while (bytes >= 1024 && i < units.length - 1) {
-    bytes /= 1024;
-    i++;
-  }
-  return bytes.toFixed(1) + " " + units[i];
-}
-
-// Uploads a single file with fine-grained progress. Distinguishes "bytes
-// still going over the wire" from "server is writing to disk", since large
-// files can sit at 100% for a while once the browser is done sending but
-// before the server has finished flushing to disk and responding.
-// `onXhr` is invoked synchronously with the XHR instance so the caller can
-// keep a reference around to abort it later (e.g. a per-file cancel button).
-function uploadFileWithProgress(url, file, onProgress, onXhr) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", url);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const pct = Math.round((e.loaded / e.total) * 100);
-        onProgress(pct === 100 ? { pct, finishing: true } : { pct, finishing: false });
-      }
-    };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        resolve();
-      } else {
-        let message = xhr.statusText;
-        try {
-          message = JSON.parse(xhr.responseText).error || message;
-        } catch {
-          /* non-JSON error body */
-        }
-        reject(new Error(message));
-      }
-    };
-    xhr.onerror = () => reject(new Error("Upload failed"));
-    xhr.onabort = () => reject(new UploadCancelledError());
-    const formData = new FormData();
-    formData.append("files", file);
-    xhr.send(formData);
-    onXhr(xhr);
-  });
-}
-
-class UploadCancelledError extends Error {
-  constructor() {
-    super("Cancelled");
-    this.name = "UploadCancelledError";
-  }
-}
-
-// Retries a transient failure (e.g. a network drive briefly dropping mid-
-// batch) a couple of times before giving up, so a one-off I/O hiccup doesn't
-// fail an otherwise-fine upload. Cancellation always wins over a retry.
-const UPLOAD_MAX_ATTEMPTS = 3;
-const UPLOAD_RETRY_DELAY_MS = 800;
-
-async function uploadWithRetries(url, file, controller, onEvent) {
-  for (let attempt = 1; attempt <= UPLOAD_MAX_ATTEMPTS; attempt++) {
-    if (controller.cancelled) throw new UploadCancelledError();
-    try {
-      await uploadFileWithProgress(
-        url,
-        file,
-        (progress) => onEvent({ type: "progress", ...progress }),
-        (xhr) => {
-          controller.xhr = xhr;
-        }
-      );
-      return;
-    } catch (err) {
-      controller.xhr = null;
-      if (controller.cancelled || err instanceof UploadCancelledError) throw new UploadCancelledError();
-      if (attempt === UPLOAD_MAX_ATTEMPTS) throw err;
-      onEvent({ type: "retrying", attempt: attempt + 1, maxAttempts: UPLOAD_MAX_ATTEMPTS });
-      await new Promise((resolve) => setTimeout(resolve, UPLOAD_RETRY_DELAY_MS));
-      if (controller.cancelled) throw new UploadCancelledError();
-    }
-  }
-}
-
-function buildUploadRow(file) {
-  const row = document.createElement("div");
-  row.className = "upload-item";
-  row.dataset.state = "queued";
-
-  const top = document.createElement("div");
-  top.className = "upload-item-top";
-
-  const icon = document.createElement("span");
-  icon.className = "upload-item-icon";
-  top.appendChild(icon);
-
-  const name = document.createElement("span");
-  name.className = "upload-item-name";
-  name.textContent = file.name;
-  top.appendChild(name);
-
-  const size = document.createElement("span");
-  size.className = "upload-item-size";
-  size.textContent = formatSize(file.size);
-  top.appendChild(size);
-
-  const status = document.createElement("span");
-  status.className = "upload-item-status";
-  status.textContent = "Waiting…";
-  top.appendChild(status);
-
-  const cancelBtn = document.createElement("button");
-  cancelBtn.type = "button";
-  cancelBtn.className = "upload-item-cancel";
-  cancelBtn.title = "Cancel this upload";
-  cancelBtn.textContent = "✕";
-  top.appendChild(cancelBtn);
-
-  row.appendChild(top);
-
-  const bottom = document.createElement("div");
-  bottom.className = "upload-item-bottom";
-
-  const bar = document.createElement("div");
-  bar.className = "upload-item-bar";
-  const fill = document.createElement("div");
-  fill.className = "upload-item-bar-fill";
-  bar.appendChild(fill);
-  bottom.appendChild(bar);
-
-  const errorEl = document.createElement("div");
-  errorEl.className = "upload-item-error";
-  bottom.appendChild(errorEl);
-
-  row.appendChild(bottom);
-
-  return { row, fill, status, cancelBtn, errorEl };
-}
-
-async function uploadFilesOneByOne(files) {
-  const queueList = document.getElementById("upload-queue-list");
-  const queue = document.getElementById("upload-queue");
-  const summary = document.getElementById("upload-queue-summary");
-  const overallFill = document.getElementById("upload-queue-overall-fill");
-  const overallPct = document.getElementById("upload-queue-overall-pct");
-  const cancelAllBtn = document.getElementById("upload-cancel-all-btn");
-
-  const total = files.length;
-  queueList.innerHTML = "";
-  overallFill.style.width = "0%";
-  overallPct.textContent = "0%";
-  queue.hidden = false;
-  cancelAllBtn.hidden = false;
-  cancelAllBtn.disabled = false;
-
-  // Tracks cancellation per file so both a queued (not-yet-started) file and
-  // an in-flight one can be cancelled the same way.
-  const controllers = files.map(() => ({ cancelled: false, xhr: null }));
-  let cancelledAll = false;
-
-  function cancelAt(i) {
-    const c = controllers[i];
-    if (c.cancelled) return;
-    c.cancelled = true;
-    if (c.xhr) {
-      // In-flight request: aborting it triggers the catch block below.
-      c.xhr.abort();
-    } else {
-      // Not yet started, or waiting between retry attempts: nothing to
-      // abort, so reflect the cancellation immediately ourselves.
-      rows[i].row.dataset.state = "cancelled";
-      rows[i].status.textContent = "Cancelled";
-    }
-  }
-
-  const rows = files.map((file, i) => {
-    const built = buildUploadRow(file);
-    built.cancelBtn.onclick = () => cancelAt(i);
-    queueList.appendChild(built.row);
-    return built;
-  });
-
-  cancelAllBtn.onclick = () => {
-    cancelledAll = true;
-    cancelAllBtn.disabled = true;
-    for (let i = 0; i < total; i++) {
-      const rowState = rows[i].row.dataset.state;
-      if (rowState === "done" || rowState === "error" || rowState === "cancelled") continue;
-      cancelAt(i);
-    }
-  };
-
-  let completedBytes = 0;
-  const totalBytes = files.reduce((sum, f) => sum + f.size, 0) || 1;
-  let failures = 0;
-  let cancelled = 0;
-
-  for (let i = 0; i < total; i++) {
-    const file = files[i];
-    const { row, fill, status, errorEl } = rows[i];
-
-    if (controllers[i].cancelled) {
-      row.dataset.state = "cancelled";
-      status.textContent = "Cancelled";
-      cancelled++;
-      completedBytes += file.size;
-      continue;
-    }
-
-    row.dataset.state = "uploading";
-    status.textContent = "0%";
-    summary.textContent = `Uploading ${i + 1} of ${total}…`;
-
-    try {
-      await uploadWithRetries(
-        base + "/upload?path=" + encodeURIComponent(currentRel),
-        file,
-        controllers[i],
-        (event) => {
-          if (event.type === "retrying") {
-            row.dataset.state = "uploading";
-            fill.style.width = "0%";
-            status.textContent = `Retry ${event.attempt}/${event.maxAttempts}`;
-            return;
-          }
-          const { pct, finishing } = event;
-          fill.style.width = pct + "%";
-          if (finishing) {
-            row.dataset.state = "finishing";
-            status.textContent = "Saving…";
-          } else {
-            status.textContent = pct + "%";
-          }
-          const pctDone = Math.round(((completedBytes + (pct / 100) * file.size) / totalBytes) * 100);
-          overallFill.style.width = pctDone + "%";
-          overallPct.textContent = pctDone + "%";
-        }
-      );
-      row.dataset.state = "done";
-      fill.style.width = "100%";
-      status.textContent = "Done";
-    } catch (err) {
-      if (err instanceof UploadCancelledError) {
-        row.dataset.state = "cancelled";
-        status.textContent = "Cancelled";
-        cancelled++;
-      } else {
-        row.dataset.state = "error";
-        status.textContent = "Failed";
-        errorEl.textContent = err.message || "Upload failed";
-        failures++;
-      }
-    }
-
-    completedBytes += file.size;
-    const pctDone = Math.round((completedBytes / totalBytes) * 100);
-    overallFill.style.width = pctDone + "%";
-    overallPct.textContent = pctDone + "%";
-  }
-
-  cancelAllBtn.hidden = true;
-
-  const uploaded = total - failures - cancelled;
-  if (cancelledAll) {
-    summary.textContent = `Cancelled — ${uploaded} of ${total} uploaded`;
-  } else if (failures === 0 && cancelled === 0) {
-    summary.textContent = `Uploaded ${total} file${total === 1 ? "" : "s"}`;
-  } else {
-    summary.textContent = `${uploaded} of ${total} uploaded`;
-  }
-
-  return { failures, cancelled };
-}
-
-document.getElementById("upload-form").onsubmit = async (e) => {
-  e.preventDefault();
-  const input = document.getElementById("upload-input");
-  if (!input.files.length) return;
-  const files = Array.from(input.files);
-  const statusEl = document.getElementById("upload-status");
-  const queue = document.getElementById("upload-queue");
-  statusEl.hidden = true;
-
-  const { failures, cancelled } = await uploadFilesOneByOne(files);
-
-  setTimeout(() => {
-    queue.hidden = true;
-  }, failures === 0 && cancelled === 0 ? 1200 : 4000);
-
-  if (failures === 0 && cancelled === 0) {
-    statusEl.className = "success";
-    statusEl.textContent = "Upload complete!";
-  } else if (failures === 0) {
-    statusEl.className = "error";
-    statusEl.textContent = `${cancelled} file${cancelled === 1 ? "" : "s"} cancelled.`;
-  } else {
-    statusEl.className = "error";
-    statusEl.textContent = `${failures} file${failures === 1 ? "" : "s"} failed to upload${
-      cancelled ? `, ${cancelled} cancelled` : ""
-    }.`;
-  }
-  statusEl.hidden = false;
-  input.value = "";
-  if (permission !== "write") loadFiles(currentRel);
-  setTimeout(() => (statusEl.hidden = true), 4000);
-};
-
-init();
+})();
 </script>
 </body>
 </html>

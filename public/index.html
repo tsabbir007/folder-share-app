@@ -2,93 +2,51 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Folder Share</title>
+<link rel="stylesheet" href="/assets/drive.css" />
 <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
-<header>
-  <h1>Folder Share <span class="version-tag" id="version-tag" hidden></span></h1>
+<header class="app-bar">
+  <button class="icon-btn" id="menu-btn" title="Main menu" aria-label="Main menu"></button>
+  <div class="brand">
+    <span id="brand-logo"></span>
+    <span class="brand-name">Folder Share<span class="brand-version" id="version-tag" hidden></span></span>
+  </div>
+  <label class="search" id="search-box">
+    <span class="icon-btn" id="search-icon" aria-hidden="true"></span>
+    <input type="search" id="search-input" placeholder="Search" autocomplete="off" />
+  </label>
+  <div class="app-bar-end">
+    <button class="tunnel-chip" id="tunnel-chip" title="Tunnel status"><span class="dot stopped" id="tunnel-chip-dot"></span><span class="chip-label" id="tunnel-chip-label">Tunnel off</span></button>
+  </div>
 </header>
 
-<main>
-  <section id="tunnel-panel">
-    <div class="tunnel-row">
-      <span id="tunnel-indicator" class="dot stopped"></span>
-      <span id="tunnel-label">Tunnel stopped</span>
-      <button id="tunnel-toggle">Start Tunnel</button>
-    </div>
-    <div class="path-bar" id="tunnel-url" hidden></div>
-  </section>
-
-  <section id="shares-view">
-    <div class="section-header">
-      <h2>Shared Folders</h2>
-      <button id="add-folder-btn">+ Add Folder</button>
-    </div>
-    <div class="list" id="shares-list"></div>
-  </section>
-
-  <section id="browse-view" hidden>
-    <div class="section-header">
-      <h2>Pick a folder</h2>
-      <button class="secondary" id="browse-cancel-btn">Cancel</button>
-    </div>
-    <div class="path-bar" id="current-path"></div>
-    <div class="list" id="browse-list"></div>
-    <div class="permission-row">
-      <label for="permission-select">Access:</label>
-      <select id="permission-select">
-        <option value="both">Read &amp; Write</option>
-        <option value="read">Read only</option>
-        <option value="write">Write only</option>
-      </select>
-      <label for="upload-limit-input" id="upload-limit-label" class="upload-limit-label">Upload limit (MB):</label>
-      <input type="number" id="upload-limit-input" min="1" placeholder="Default" />
-      <button id="add-share-btn">Add This Folder</button>
-    </div>
-  </section>
-
-  <section id="file-view" hidden>
-    <div class="section-header">
-      <h2 id="file-view-title"></h2>
-      <button class="secondary" id="file-view-back-btn">Back</button>
-    </div>
-    <div class="path-bar-row">
-      <div class="path-bar" id="current-rel"></div>
-      <button class="secondary small" id="download-zip-btn">⬇ Download ZIP</button>
-    </div>
-    <div class="list" id="files-list"></div>
-    <form id="upload-form" hidden>
-      <input type="file" id="upload-input" multiple />
-      <button type="submit">Upload</button>
-    </form>
-    <div class="upload-limit-note" id="upload-limit-note" hidden></div>
-    <div class="upload-queue" id="upload-queue" hidden>
-      <div class="upload-queue-header">
-        <span id="upload-queue-summary">Uploading…</span>
-        <span id="upload-queue-overall-pct">0%</span>
-        <button type="button" class="secondary small" id="upload-cancel-all-btn" hidden>Cancel All</button>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-head"><span id="drawer-logo"></span><span>Folder Share</span></div>
+    <button class="new-btn" id="new-btn"></button>
+    <button class="nav-item" id="nav-home" data-close-drawer></button>
+    <div class="nav-section">Shared folders</div>
+    <div id="nav-shares"></div>
+    <div class="sidebar-foot">
+      <div class="tunnel-card">
+        <div class="tunnel-row">
+          <span class="dot stopped" id="tunnel-indicator"></span>
+          <span id="tunnel-label">Tunnel stopped</span>
+        </div>
+        <div class="tunnel-url" id="tunnel-url" hidden></div>
+        <button class="btn tonal small" id="tunnel-toggle">Start tunnel</button>
       </div>
-      <div class="upload-queue-overall-bar">
-        <div class="upload-queue-overall-fill" id="upload-queue-overall-fill"></div>
-      </div>
-      <div class="upload-queue-list" id="upload-queue-list"></div>
     </div>
-    <div id="upload-status" hidden></div>
-  </section>
-</main>
-
-<div id="preview-overlay" class="preview-overlay" hidden>
-  <div class="preview-box">
-    <div class="preview-header">
-      <span id="preview-title"></span>
-      <button class="secondary small" id="preview-close-btn">Close</button>
-    </div>
-    <div class="preview-body" id="preview-body"></div>
-  </div>
+  </aside>
+  <main class="main" id="main"></main>
 </div>
+<button class="fab" id="fab" title="New" aria-label="New"></button>
+<div class="scrim" id="scrim" hidden></div>
 
+<script src="/assets/drive.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
