@@ -12,8 +12,11 @@ services:
       - folder-share-data:/data
       # Mount host folders at the SAME path inside the container so any
       # shares you already configured keep working without changes.
-      # Add one line per drive/folder you want selectable in the app.
-      - "/Volumes/EB HDD 1:/Volumes/EB HDD 1"
+      # All of /Volumes is mounted rather than a single drive: a drive mounted
+      # directly goes stale (EBADF) when it's ejected and never comes back,
+      # whereas through /Volumes it's looked up fresh, so unplugging and
+      # replugging just works, and the container starts even when it's absent.
+      - "/Volumes:/Volumes"
     restart: unless-stopped
 
 volumes:

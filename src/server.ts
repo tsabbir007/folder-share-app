@@ -8,7 +8,7 @@ import os from "os";
 import crypto from "crypto";
 import multer from "multer";
 import archiver from "archiver";
-import { getTunnelStatus, startTunnel, stopTunnel } from "./tunnel";
+import { getTunnelStatus, startTunnel, stopTunnel, TunnelConfig } from "./tunnel";
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
@@ -31,6 +31,7 @@ const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..");
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const STATE_FILE = path.join(DATA_DIR, ".state.json");
 const SHARE_SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_ROOT_FOLDER = path.resolve(process.env.ROOT_FOLDER || "/Volumes/EB HDD 1");
 const DEFAULT_MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || 5120);
 const MAX_LOGIN_FAILURES = 10;
 const LOGIN_FAILURE_WINDOW_MS = 3 * 60 * 1000;
@@ -46,6 +47,12 @@ interface Share {
   password: string;
   // Per-share upload limit, in MB. Undefined falls back to DEFAULT_MAX_UPLOAD_MB.
   maxUploadMB?: number;
+  // false makes the link open without a password. Undefined (older shares) = true.
+  requirePassword?: boolean;
+}
+
+function sharePasswordRequired(share: Share): boolean {
+  return share.requirePassword !== false;
 }
 
 function shareUploadLimitMB(share: Share): number {
@@ -55,11 +62,33 @@ function shareUploadLimitMB(share: Share): number {
 // Adds the resolved (share-specific or default) upload limit alongside the
 // raw maxUploadMB, so the UI can display it without knowing DEFAULT_MAX_UPLOAD_MB.
 function serializeShare(share: Share) {
-  return { ...share, effectiveMaxUploadMB: shareUploadLimitMB(share) };
+  return {
+    ...share,
+    effectiveMaxUploadMB: shareUploadLimitMB(share),
+    requirePassword: sharePasswordRequired(share),
+  };
+}
+
+// Hidden folder (one per drive/share, see trashBaseFor) holding deleted items
+// as <TRASH_DIR>/<id>/<original name>, so deleting is a same-drive rename.
+const TRASH_DIR = ".folder-share-trash";
+
+interface TrashItem {
+  id: string;
+  name: string;
+  originalPath: string;
+  trashedPath: string;
+  deletedAt: number;
+  isDir: boolean;
+  size: number | null;
 }
 
 interface AppState {
   shares: Share[];
+  trash?: TrashItem[];
+  tunnel?: TunnelConfig;
+  // Admin-chosen starting folder; undefined falls back to DEFAULT_ROOT_FOLDER.
+  rootPath?: string;
 }
 
 function loadState(): AppState {
@@ -127,10 +156,56 @@ function findShare(id: string): Share | undefined {
   return state.shares.find((s) => s.id === id);
 }
 
+// Dot-files plus OS bookkeeping folders found at the root of external drives.
+const HIDDEN_NAMES = new Set(["$RECYCLE.BIN", "System Volume Information", "RECYCLER", "lost+found"]);
+function isHiddenName(name: string): boolean {
+  return name.startsWith(".") || HIDDEN_NAMES.has(name);
+}
+
+// --- Starting folder ("All folders" in the admin UI) ---
+// Exposed to the admin API as a virtual share with id "root", so browsing,
+// downloads, uploads and copy/move/delete reuse the share code paths. It is
+// never reachable through the public /share links (those use findShare).
+const ROOT_ID = "root";
+
+function rootPath(): string {
+  return state.rootPath || DEFAULT_ROOT_FOLDER;
+}
+
+function isDirSafe(p: string): boolean {
+  try {
+    return fs.statSync(p).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
+function rootShare(): Share {
+  const p = rootPath();
+  return { id: ROOT_ID, path: p, name: path.basename(p) || p, permission: "both", password: "" };
+}
+
+function findAdminShare(id: string): Share | undefined {
+  return id === ROOT_ID ? rootShare() : findShare(id);
+}
+
+// An ejected drive shows up as ENOENT, or as EBADF/EIO on a stale mount.
+function fsErrorMessage(err: any): string {
+  if (["ENOENT", "EBADF", "EIO", "ENOTCONN", "ENXIO", "ESTALE"].includes(err?.code)) {
+    return "This folder isn't available right now. Check that the drive is connected.";
+  }
+  return err?.message || "Unknown error";
+}
+
 function resolveSafe(root: string, relPath: string): string {
   const target = path.resolve(root, "." + path.sep + relPath);
   if (target !== root && !target.startsWith(root + path.sep)) {
     throw new Error("Path escapes shared folder");
+  }
+  // The recycle bin lives inside shared folders; nothing may reach into it
+  // except the /api/trash endpoints, which use their own stored paths.
+  if (path.relative(root, target).split(path.sep).includes(TRASH_DIR)) {
+    throw new Error("Not found");
   }
   return target;
 }
@@ -216,6 +291,16 @@ setInterval(() => {
 app.set("trust proxy", "loopback");
 
 app.use(helmet({ contentSecurityPolicy: false }));
+
+// Any write (upload, copy, move, delete, new folder, restore…) can change
+// folder sizes; clear the cache when it starts and again when it finishes.
+app.use((req: Request, res: Response, next: NextFunction) => {
+  if (req.method !== "GET" && req.method !== "HEAD") {
+    clearSizeCache();
+    res.on("finish", clearSizeCache);
+  }
+  next();
+});
 app.use(cookieParser());
 
 // The admin login (username + password) guards everything EXCEPT the
@@ -257,12 +342,54 @@ app.get("/api/version", (_req: Request, res: Response) => {
 });
 
 // --- Filesystem browser, for picking a folder to add (admin only) ---
+// --- Settings (admin only) ---
+function settingsPayload() {
+  const p = rootPath();
+  return {
+    rootPath: p,
+    rootName: path.basename(p) || p,
+    rootAvailable: isDirSafe(p),
+    defaultRootPath: DEFAULT_ROOT_FOLDER,
+    maxUploadMB: DEFAULT_MAX_UPLOAD_MB,
+  };
+}
+
+app.get("/api/settings", (_req: Request, res: Response) => {
+  res.json(settingsPayload());
+});
+
+app.put("/api/settings", (req: Request, res: Response) => {
+  const raw = req.body?.rootPath;
+  if (typeof raw !== "string" || !raw.trim()) {
+    return res.status(400).json({ error: "Choose a starting folder" });
+  }
+  const resolved = path.resolve(raw.trim());
+  if (!isDirSafe(resolved)) {
+    return res.status(400).json({ error: "That folder doesn't exist or isn't available" });
+  }
+  state.rootPath = resolved === DEFAULT_ROOT_FOLDER ? undefined : resolved;
+  saveState();
+  res.json(settingsPayload());
+});
+
+// With no path given, the picker opens at the starting folder; if that drive
+// is unplugged, at its closest existing parent (e.g. /Volumes) instead.
+function defaultBrowsePath(): string {
+  let p = rootPath();
+  while (!isDirSafe(p)) {
+    const parent = path.dirname(p);
+    if (parent === p) return os.homedir();
+    p = parent;
+  }
+  return p;
+}
+
 app.get("/api/browse", (req: Request, res: Response) => {
-  const dirPath = (req.query.path as string) || os.homedir();
+  const dirPath = (req.query.path as string) || defaultBrowsePath();
   try {
     const entries = fs
       .readdirSync(dirPath, { withFileTypes: true })
-      .filter((e) => e.isDirectory() && !e.name.startsWith("."))
+      .filter((e) => e.isDirectory() && !isHiddenName(e.name))
       .map((e) => e.name)
       .sort((a, b) => a.localeCompare(b));
     res.json({ path: dirPath, parent: path.dirname(dirPath), entries });
@@ -302,11 +429,13 @@ app.post("/api/shares", (req: Request, res: Response) => {
   if (Number.isNaN(maxUploadMB)) {
     return res.status(400).json({ error: "Invalid upload limit" });
   }
+  const requirePassword = req.body?.requirePassword;
   const resolved = path.resolve(sharePath);
   const existing = state.shares.find((s) => s.path === resolved);
   if (existing) {
     existing.permission = permission;
     if (maxUploadMB !== undefined) existing.maxUploadMB = maxUploadMB ?? undefined;
+    if (typeof requirePassword === "boolean") existing.requirePassword = requirePassword;
     saveState();
     return res.json({ share: serializeShare(existing) });
   }
@@ -317,6 +446,7 @@ app.post("/api/shares", (req: Request, res: Response) => {
     permission,
     password: generatePassword(),
     maxUploadMB: maxUploadMB ?? undefined,
+    requirePassword: requirePassword !== false,
   };
   state.shares.push(share);
   saveState();
@@ -338,6 +468,13 @@ app.patch("/api/shares/:id", (req: Request, res: Response) => {
     return res.status(400).json({ error: "Invalid upload limit" });
   }
   if (maxUploadMB !== undefined) share.maxUploadMB = maxUploadMB ?? undefined;
+  const requirePassword = req.body?.requirePassword;
+  if (requirePassword !== undefined) {
+    if (typeof requirePassword !== "boolean") {
+      return res.status(400).json({ error: "Invalid password setting" });
+    }
+    share.requirePassword = requirePassword;
+  }
   saveState();
   res.json({ share: serializeShare(share) });
 });
@@ -348,7 +485,7 @@ app.post("/api/shares/:id/regenerate-password", (req: Request, res: Response) =>
   share.password = generatePassword();
   invalidateShareSessions(share.id);
   saveState();
-  res.json({ share });
+  res.json({ share: serializeShare(share) });
 });
 
 app.delete("/api/shares/:id", (req: Request, res: Response) => {
@@ -361,7 +498,7 @@ app.delete("/api/shares/:id", (req: Request, res: Response) => {
 });
 
 function requireShare(req: Request, res: Response, next: NextFunction) {
-  const share = findShare(req.params.id);
+  const share = findAdminShare(req.params.id);
   if (!share) return res.status(404).json({ error: "Share not found" });
   (req as any).share = share;
   next();
@@ -386,7 +523,8 @@ app.get("/api/shares/:id/preview", requireShare, (req: Request, res: Response) =
 const uploadStorage = multer.diskStorage({
   destination: (req: Request, _file, cb) => {
     try {
-      const share = findShare(req.params.id);
+      // Set by requireShare (admin) or requireShareSession (public link).
+      const share = (req as any).share as Share | undefined;
       if (!share) return cb(new Error("Share not found"), "");
       if (share.permission === "read") return cb(new Error("This share is read-only"), "");
       const rel = (req.query.path as string) || "";
@@ -403,7 +541,7 @@ const uploadStorage = multer.diskStorage({
 // Each share can override the upload size limit, so the multer instance
 // (and its fileSize limit) is built per-request rather than once up front.
 function uploadMiddleware(req: Request, res: Response, next: NextFunction) {
-  const share = findShare(req.params.id);
+  const share = (req as any).share as Share | undefined;
   if (!share) return res.status(404).json({ error: "Share not found" });
   const limitMB = shareUploadLimitMB(share);
   (req as any).uploadLimitMB = limitMB;
@@ -416,6 +554,298 @@ app.post("/api/shares/:id/upload", requireShare, uploadMiddleware, (req: Request
   res.json({ ok: true, count: files.length });
 });
 
+// --- Copy / move / delete inside shared folders (admin only) ---
+
+// Resolves an existing item inside a share. The share root itself is refused:
+// moving or deleting it would pull the folder out from under the share.
+function resolveItem(share: Share, rel: unknown): string {
+  if (typeof rel !== "string" || !rel.replace(/^\/+|\/+$/g, "")) {
+    throw new Error("Choose a file or folder inside the share");
+  }
+  const target = resolveSafe(share.path, rel);
+  assertRealPathWithin(share.path, target);
+  if (!fs.existsSync(target)) throw new Error("That file or folder no longer exists");
+  return target;
+}
+
+function resolveDestDir(body: any): string {
+  const share = findAdminShare(body?.destShareId);
+  if (!share) throw new Error("Destination share not found");
+  const dir = resolveSafe(share.path, typeof body?.destPath === "string" ? body.destPath : "");
+  assertRealPathWithin(share.path, dir);
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error("Destination folder not found");
+  return dir;
+}
+
+// "photos" -> "photos (2)", "a.txt" -> "a (2).txt", so nothing is overwritten.
+function freeName(dir: string, name: string): string {
+  if (!fs.existsSync(path.join(dir, name))) return name;
+  const isDir = fs.statSync(path.join(dir, name)).isDirectory();
+  const ext = isDir ? "" : path.extname(name);
+  const stem = name.slice(0, name.length - ext.length);
+  for (let i = 2; ; i++) {
+    const candidate = `${stem} (${i})${ext}`;
+    if (!fs.existsSync(path.join(dir, candidate))) return candidate;
+  }
+}
+
+function isSameOrInside(parent: string, child: string): boolean {
+  const p = fs.realpathSync(parent);
+  const c = fs.realpathSync(child);
+  return c === p || c.startsWith(p + path.sep);
+}
+
+// rename() when possible; shares can live on different drives, which rename() can't cross.
+async function moveItem(src: string, dest: string) {
+  try {
+    await fs.promises.rename(src, dest);
+  } catch (err: any) {
+    if (err.code !== "EXDEV") throw err;
+    await fs.promises.cp(src, dest, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+    await fs.promises.rm(src, { recursive: true });
+  }
+}
+
+async function transferItem(req: Request, res: Response, mode: "copy" | "move") {
+  try {
+    const share = (req as any).share as Share;
+    const src = resolveItem(share, req.body?.path);
+    const destDir = resolveDestDir(req.body);
+    if (fs.statSync(src).isDirectory() && isSameOrInside(src, destDir)) {
+      throw new Error(`Can't ${mode} a folder into itself`);
+    }
+    if (mode === "move" && fs.realpathSync(path.dirname(src)) === fs.realpathSync(destDir)) {
+      throw new Error("It's already in that folder");
+    }
+    const name = freeName(destDir, path.basename(src));
+    const dest = path.join(destDir, name);
+    if (mode === "copy") {
+      await fs.promises.cp(src, dest, { recursive: true, errorOnExist: true, force: false, preserveTimestamps: true });
+    } else {
+      await moveItem(src, dest);
+    }
+    res.json({ ok: true, name });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+}
+
+app.post("/api/shares/:id/folders", requireShare, async (req: Request, res: Response) => {
+  try {
+    const share = (req as any).share as Share;
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name || name === "." || name === ".." || /[\/\\\0]/.test(name)) {
+      throw new Error("Enter a folder name without / or \\");
+    }
+    if (name.length > 255) throw new Error("That name is too long");
+    const parent = resolveSafe(share.path, typeof req.body?.path === "string" ? req.body.path : "");
+    assertRealPathWithin(share.path, parent);
+    if (!isDirSafe(parent)) throw new Error("Folder not found");
+    const target = path.join(parent, name);
+    if (fs.existsSync(target)) throw new Error(`“${name}” already exists here`);
+    await fs.promises.mkdir(target);
+    res.json({ ok: true, name });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+});
+
+app.post("/api/shares/:id/items/copy", requireShare, (req: Request, res: Response) => transferItem(req, res, "copy"));
+app.post("/api/shares/:id/items/move", requireShare, (req: Request, res: Response) => transferItem(req, res, "move"));
+
+// --- Recycle bin (admin only) ---
+
+// Items inside the starting folder share its bin (one bin for the whole
+// drive); items in shares outside it use a bin at that share's root.
+function trashBaseFor(share: Share, target: string): string {
+  const root = rootPath();
+  if (isDirSafe(root) && isSameOrInside(root, target)) return root;
+  return share.path;
+}
+
+// trashedPath = <base>/<TRASH_DIR>/<id>/<name>
+const trashSlot = (item: TrashItem) => path.dirname(item.trashedPath);
+const trashBase = (item: TrashItem) => path.dirname(path.dirname(trashSlot(item)));
+
+function trashList(): TrashItem[] {
+  return (state.trash ||= []);
+}
+
+app.delete("/api/shares/:id/items", requireShare, async (req: Request, res: Response) => {
+  try {
+    const share = (req as any).share as Share;
+    const target = resolveItem(share, req.query.path);
+    const stat = fs.statSync(target);
+    const id = crypto.randomUUID();
+    const slot = path.join(trashBaseFor(share, target), TRASH_DIR, id);
+    await fs.promises.mkdir(slot, { recursive: true });
+    const trashedPath = path.join(slot, path.basename(target));
+    try {
+      await moveItem(target, trashedPath);
+    } catch (err) {
+      await fs.promises.rm(slot, { recursive: true, force: true });
+      throw err;
+    }
+    trashList().push({
+      id,
+      name: path.basename(target),
+      originalPath: target,
+      trashedPath,
+      deletedAt: Date.now(),
+      isDir: stat.isDirectory(),
+      size: stat.isDirectory() ? null : stat.size,
+    });
+    saveState();
+    res.json({ ok: true, trashId: id });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+});
+
+app.get("/api/trash", (_req: Request, res: Response) => {
+  const items = [...trashList()]
+    .sort((a, b) => b.deletedAt - a.deletedAt)
+    .map((item) => ({ ...item, available: fs.existsSync(item.trashedPath) }));
+  res.json({ items });
+});
+
+function findTrash(id: string): TrashItem {
+  const item = trashList().find((t) => t.id === id);
+  if (!item) throw new Error("That item is no longer in the recycle bin");
+  return item;
+}
+
+function dropTrash(item: TrashItem) {
+  state.trash = trashList().filter((t) => t.id !== item.id);
+  saveState();
+}
+
+app.post("/api/trash/:id/restore", async (req: Request, res: Response) => {
+  try {
+    const item = findTrash(req.params.id);
+    if (!fs.existsSync(item.trashedPath)) {
+      throw new Error("Can't find this item. Check that its drive is connected.");
+    }
+    // The original folder may have been deleted or moved since; recreate it.
+    const parent = path.dirname(item.originalPath);
+    await fs.promises.mkdir(parent, { recursive: true });
+    const name = freeName(parent, path.basename(item.originalPath));
+    const dest = path.join(parent, name);
+    await moveItem(item.trashedPath, dest);
+    await fs.promises.rm(trashSlot(item), { recursive: true, force: true });
+    dropTrash(item);
+    res.json({ ok: true, restoredTo: dest, name });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+});
+
+// Permanently removes one bin entry. If its drive is unplugged the entry is
+// kept, so the files aren't orphaned on the drive with no way to clear them.
+async function purgeTrash(item: TrashItem): Promise<boolean> {
+  if (!isDirSafe(trashBase(item))) return false;
+  await fs.promises.rm(trashSlot(item), { recursive: true, force: true });
+  dropTrash(item);
+  return true;
+}
+
+app.delete("/api/trash/:id", async (req: Request, res: Response) => {
+  try {
+    if (!(await purgeTrash(findTrash(req.params.id)))) {
+      throw new Error("Connect the drive this item is on, then try again.");
+    }
+    res.json({ ok: true });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+});
+
+app.delete("/api/trash", async (_req: Request, res: Response) => {
+  try {
+    let skipped = 0;
+    for (const item of [...trashList()]) {
+      if (!(await purgeTrash(item))) skipped++;
+    }
+    res.json({ ok: true, skipped });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+});
+
+// --- Folder sizes ---
+// Summing a folder means walking everything under it, which is slow for big
+// trees, so results are cached until anything changes (see the middleware
+// that clears this on every non-GET request).
+const SIZE_CACHE_TTL_MS = 10 * 60 * 1000;
+const sizeCache = new Map<string, { size: number; at: number }>();
+const sizeInFlight = new Map<string, Promise<number>>();
+
+function clearSizeCache() {
+  sizeCache.clear();
+}
+
+async function walkSize(dir: string): Promise<number> {
+  let total = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch {
+      continue; // unreadable subfolder: count what we can
+    }
+    // Symlinks aren't followed, so a link can't pull in files from elsewhere
+    // or loop forever; the recycle bin isn't part of any folder's size.
+    const files: string[] = [];
+    for (const e of entries) {
+      if (e.isSymbolicLink() || e.name === TRASH_DIR) continue;
+      const full = path.join(current, e.name);
+      if (e.isDirectory()) stack.push(full);
+      else if (e.isFile()) files.push(full);
+    }
+    for (let i = 0; i < files.length; i += 64) {
+      const stats = await Promise.all(files.slice(i, i + 64).map((f) => fs.promises.lstat(f).catch(() => null)));
+      for (const st of stats) if (st) total += st.size;
+    }
+  }
+  return total;
+}
+
+function folderSize(dir: string): Promise<number> {
+  const cached = sizeCache.get(dir);
+  if (cached && Date.now() - cached.at < SIZE_CACHE_TTL_MS) return Promise.resolve(cached.size);
+  let pending = sizeInFlight.get(dir);
+  if (!pending) {
+    pending = walkSize(dir)
+      .then((size) => {
+        sizeCache.set(dir, { size, at: Date.now() });
+        return size;
+      })
+      .finally(() => sizeInFlight.delete(dir));
+    sizeInFlight.set(dir, pending);
+  }
+  return pending;
+}
+
+async function sendFolderSize(share: Share, req: Request, res: Response) {
+  if (share.permission === "write") {
+    return res.status(403).json({ error: "This share is write-only" });
+  }
+  try {
+    const target = resolveSafe(share.path, (req.query.path as string) || "");
+    assertRealPathWithin(share.path, target);
+    if (!isDirSafe(target)) throw new Error("Not a folder");
+    res.json({ size: await folderSize(target) });
+  } catch (err: any) {
+    res.status(400).json({ error: fsErrorMessage(err) });
+  }
+}
+
+app.get("/api/shares/:id/folder-size", requireShare, (req: Request, res: Response) => {
+  sendFolderSize((req as any).share, req, res);
+});
+
 // --- Shared logic used by both the admin API and the public /share links ---
 function listFiles(share: Share, req: Request, res: Response) {
   const rel = (req.query.path as string) || "";
@@ -424,20 +854,21 @@ function listFiles(share: Share, req: Request, res: Response) {
     assertRealPathWithin(share.path, target);
     const entries = fs
       .readdirSync(target, { withFileTypes: true })
-      .filter((e) => !e.name.startsWith("."))
-      .map((e) => {
-        const stat = fs.statSync(path.join(target, e.name));
-        return {
-          name: e.name,
-          isDir: e.isDirectory(),
-          size: e.isDirectory() ? null : stat.size,
-          addedAt: stat.mtimeMs,
-        };
+      .filter((e) => !isHiddenName(e.name))
+      .flatMap((e) => {
+        // A broken symlink or unreadable system folder (common at a drive's
+        // root) is skipped rather than failing the whole listing.
+        try {
+          const stat = fs.statSync(path.join(target, e.name));
+          return [{ name: e.name, isDir: stat.isDirectory(), size: stat.isDirectory() ? null : stat.size, addedAt: stat.mtimeMs }];
+        } catch {
+          return [];
+        }
       })
       .sort((a, b) => b.addedAt - a.addedAt);
     res.json({ path: rel.replace(/^\/+/, ""), entries });
   } catch (err: any) {
-    res.status(400).json({ error: err.message });
+    res.status(400).json({ error: fsErrorMessage(err) });
   }
 }
 
@@ -485,7 +916,8 @@ function downloadFolderZip(share: Share, req: Request, res: Response) {
       else res.destroy(err);
     });
     archive.pipe(res);
-    archive.directory(target, false);
+    // Never ship the recycle bin inside a ZIP of a shared folder.
+    archive.directory(target, false, (entry) => (entry.name.split("/").includes(TRASH_DIR) ? false : entry));
     archive.finalize();
   } catch (err: any) {
     res.status(400).send(err.message);
@@ -540,13 +972,19 @@ shareRouter.get("/:id", (req: Request, res: Response) => {
 shareRouter.get("/:id/meta", (req: Request, res: Response) => {
   const share = findShare(req.params.id);
   if (!share) return res.status(404).json({ error: "This share link is no longer valid" });
-  res.json({ name: share.name, permission: share.permission, maxUploadMB: shareUploadLimitMB(share) });
+  res.json({
+    name: share.name,
+    permission: share.permission,
+    maxUploadMB: shareUploadLimitMB(share),
+    requirePassword: sharePasswordRequired(share),
+  });
 });
 
 shareRouter.get("/:id/status", (req: Request, res: Response) => {
   const share = findShare(req.params.id);
   if (!share) return res.status(404).json({ error: "This share link is no longer valid" });
-  const authenticated = getShareSessionShareId(req.cookies?.share_session) === share.id;
+  const authenticated =
+    !sharePasswordRequired(share) || getShareSessionShareId(req.cookies?.share_session) === share.id;
   res.json({ authenticated, name: share.name, permission: share.permission });
 });
 
@@ -584,7 +1022,7 @@ shareRouter.post("/:id/logout", (req: Request, res: Response) => {
 function requireShareSession(req: Request, res: Response, next: NextFunction) {
   const share = findShare(req.params.id);
   if (!share) return res.status(404).json({ error: "This share link is no longer valid" });
-  if (getShareSessionShareId(req.cookies?.share_session) !== share.id) {
+  if (sharePasswordRequired(share) && getShareSessionShareId(req.cookies?.share_session) !== share.id) {
     return res.status(401).json({ error: "Not authenticated" });
   }
   (req as any).share = share;
@@ -607,6 +1045,10 @@ shareRouter.get("/:id/preview", requireShareSession, (req: Request, res: Respons
   previewFile((req as any).share, req, res);
 });
 
+shareRouter.get("/:id/folder-size", requireShareSession, (req: Request, res: Response) => {
+  sendFolderSize((req as any).share, req, res);
+});
+
 shareRouter.post("/:id/upload", requireShareSession, uploadMiddleware, (req: Request, res: Response) => {
   const files = (req.files as Express.Multer.File[]) || [];
   res.json({ ok: true, count: files.length });
@@ -615,12 +1057,68 @@ shareRouter.post("/:id/upload", requireShareSession, uploadMiddleware, (req: Req
 app.use("/share", shareRouter);
 
 // --- Tunnel control (admin only) ---
+function tunnelConfig(): TunnelConfig {
+  return state.tunnel ?? { mode: "quick" };
+}
+
+// Never sends the token back to the browser; only whether one is saved.
+function publicTunnelConfig() {
+  const cfg = tunnelConfig();
+  return { mode: cfg.mode, hostname: cfg.hostname || "", hasToken: !!cfg.token };
+}
+
 app.get("/api/tunnel/status", (_req: Request, res: Response) => {
-  res.json(getTunnelStatus());
+  res.json({ ...getTunnelStatus(), config: publicTunnelConfig() });
+});
+
+app.get("/api/tunnel/config", (_req: Request, res: Response) => {
+  res.json(publicTunnelConfig());
+});
+
+// Accepts a bare hostname or a pasted URL ("https://files.example.com/").
+function normalizeHostname(raw: string): string | null {
+  const host = raw.trim().replace(/^https?:\/\//i, "").replace(/\/.*$/, "").toLowerCase();
+  return /^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$/.test(host) ? host : null;
+}
+
+// Tunnel tokens are base64 JSON: {"a": accountTag, "t": tunnelId, "s": secret}.
+function isTunnelToken(token: string): boolean {
+  try {
+    const decoded = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
+    return !!(decoded && decoded.a && decoded.t && decoded.s);
+  } catch {
+    return false;
+  }
+}
+
+app.put("/api/tunnel/config", (req: Request, res: Response) => {
+  const mode = req.body?.mode;
+  if (mode !== "quick" && mode !== "fixed") {
+    return res.status(400).json({ error: "Invalid tunnel mode" });
+  }
+  const prev = tunnelConfig();
+  const next: TunnelConfig = { mode, hostname: prev.hostname, token: prev.token };
+  if (typeof req.body?.hostname === "string" && req.body.hostname.trim()) {
+    const host = normalizeHostname(req.body.hostname);
+    if (!host) return res.status(400).json({ error: "Invalid hostname" });
+    next.hostname = host;
+  }
+  if (typeof req.body?.token === "string" && req.body.token.trim()) {
+    // The dashboard shows `cloudflared ... --token <TOKEN>`; accept that whole line too.
+    const token = req.body.token.trim().split(/\s+/).pop();
+    if (!isTunnelToken(token)) return res.status(400).json({ error: "That doesn't look like a Cloudflare tunnel token" });
+    next.token = token;
+  }
+  if (mode === "fixed" && (!next.hostname || !next.token)) {
+    return res.status(400).json({ error: "A fixed URL needs both a hostname and a tunnel token" });
+  }
+  state.tunnel = next;
+  saveState();
+  res.json(publicTunnelConfig());
 });
 
 app.post("/api/tunnel/start", async (_req: Request, res: Response) => {
-  const result = await startTunnel(PORT);
+  const result = await startTunnel(PORT, tunnelConfig());
   res.json(result);
 });
 

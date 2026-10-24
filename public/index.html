@@ -28,16 +28,22 @@
     <div class="sidebar-head"><span id="drawer-logo"></span><span>Folder Share</span></div>
     <button class="new-btn" id="new-btn"></button>
     <button class="nav-item" id="nav-home" data-close-drawer></button>
+    <button class="nav-item" id="nav-all" data-close-drawer></button>
+    <button class="nav-item" id="nav-trash" data-close-drawer></button>
     <div class="nav-section">Shared folders</div>
     <div id="nav-shares"></div>
     <div class="sidebar-foot">
+      <button class="nav-item" id="nav-settings" data-close-drawer></button>
       <div class="tunnel-card">
         <div class="tunnel-row">
           <span class="dot stopped" id="tunnel-indicator"></span>
           <span id="tunnel-label">Tunnel stopped</span>
         </div>
         <div class="tunnel-url" id="tunnel-url" hidden></div>
-        <button class="btn tonal small" id="tunnel-toggle">Start tunnel</button>
+        <div class="tunnel-actions">
+          <button class="btn tonal small" id="tunnel-toggle">Start tunnel</button>
+          <button class="icon-btn sm" id="tunnel-settings" title="Public URL settings" aria-label="Public URL settings"></button>
+        </div>
       </div>
     </div>
   </aside>

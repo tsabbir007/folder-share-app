@@ -47,6 +47,7 @@
     sort: "M3 18h6v-2H3v2zM3 6v2h18V6H3zm0 7h12v-2H3v2z",
     share: "M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z",
     lock: "M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z",
+    move: "M20 6h-8l-2-2H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2zm-6 12v-3h-4v-4h4V8l5 5-5 5z",
     refresh: "M17.65 6.35A7.958 7.958 0 0 0 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08A5.99 5.99 0 0 1 12 18c-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z",
   };
 
@@ -183,6 +184,7 @@
     const t = h("div", { class: "toast" + (opts.error ? " error" : ""), text: message });
     toastHost.appendChild(t);
     setTimeout(() => t.remove(), opts.duration || (opts.error ? 5000 : 3000));
+    return t;
   }
 
   async function copyText(text, message = "Copied to clipboard") {
@@ -850,6 +852,57 @@
     opts.mount.replaceChildren(h("div", { class: "toolbar" }, crumbs, actions), content);
 
     const relPath = (name) => (st.rel ? st.rel + "/" + name : name);
+
+    // ----- folder sizes -----
+    // Each one is a separate request (they can be slow for big folders), two
+    // at a time, so the listing shows right away and sizes fill in after.
+    const sizes = new Map(); // rel -> bytes
+    const sizeWaiters = new Map(); // rel -> [span, ...] waiting for that size
+    let sizeQueue = [];
+    let sizeActive = 0;
+    let sizeGen = 0;
+    function resetSizes() {
+      sizeGen++;
+      sizes.clear();
+      sizeWaiters.clear();
+      sizeQueue = [];
+    }
+    function folderSizeEl(rel) {
+      if (!opts.urls.folderSize) return null;
+      const el = h("span", { class: "folder-size" });
+      if (sizes.has(rel)) {
+        el.textContent = formatSize(sizes.get(rel));
+        return el;
+      }
+      el.textContent = "…";
+      if (!sizeWaiters.has(rel)) {
+        sizeWaiters.set(rel, []);
+        sizeQueue.push(rel);
+      }
+      sizeWaiters.get(rel).push(el);
+      pumpSizes();
+      return el;
+    }
+    function pumpSizes() {
+      while (sizeActive < 2 && sizeQueue.length) {
+        const rel = sizeQueue.shift();
+        const gen = sizeGen;
+        sizeActive++;
+        fetch(opts.urls.folderSize(rel))
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null)
+          .then((data) => {
+            sizeActive--;
+            if (gen === sizeGen) {
+              const ok = data && typeof data.size === "number";
+              if (ok) sizes.set(rel, data.size);
+              for (const el of sizeWaiters.get(rel) || []) el.textContent = ok ? formatSize(data.size) : "";
+              sizeWaiters.delete(rel);
+            }
+            pumpSizes();
+          });
+      }
+    }
     const navigate = opts.navigate || ((rel) => api.load(rel));
 
     // ----- toolbar -----
@@ -943,16 +996,23 @@
           })
         );
       });
+      // Total size of the folder being viewed, after its name.
+      const total = canRead ? folderSizeEl(st.rel) : null;
+      if (total) crumbs.appendChild(h("span", { class: "crumb-size" }, total));
     }
 
     // ----- items -----
     function itemMenu(entry) {
       const rp = relPath(entry.name);
+      // Extra actions supplied by the host page (the admin app adds copy/move/delete).
+      const extra = opts.itemActions ? opts.itemActions(entry, rp) : [];
+      const tail = extra.length ? ["sep", ...extra] : [];
       if (entry.isDir) {
         return [
           { title: entry.name },
           { label: "Open", icon: "open", onClick: () => navigate(rp) },
           { label: "Download as ZIP", icon: "download", onClick: () => (location.href = opts.urls.zip(rp)) },
+          ...tail,
         ];
       }
       const kind = previewKind(entry.name);
@@ -960,6 +1020,7 @@
         { title: entry.name },
         { label: kind ? "Preview" : "Open", icon: "eye", onClick: () => openFile(entry) },
         { label: "Download", icon: "download", onClick: () => (location.href = opts.urls.download(rp)) },
+        ...tail,
       ];
     }
 
@@ -1007,7 +1068,13 @@
 
     function folderCard(entry) {
       const more = moreButton(entry.name);
-      const node = h("div", { class: "folder-card", title: entry.name }, icon("folder"), h("span", { class: "name", text: entry.name }), more);
+      const node = h(
+        "div",
+        { class: "folder-card", title: entry.name },
+        icon("folder"),
+        h("div", { class: "folder-text" }, h("span", { class: "name", text: entry.name }), folderSizeEl(relPath(entry.name))),
+        more
+      );
       bindItem(node, entry, more);
       return node;
     }
@@ -1029,13 +1096,20 @@
       const more = moreButton(entry.name);
       const lead = entry.isDir ? h("div", { class: "mini-thumb" }, icon("folder")) : thumbBox(entry, "mini-thumb");
       if (entry.isDir) lead.firstChild.style.color = "var(--ic-folder)";
-      const sub = [formatDate(entry.addedAt), entry.isDir ? null : formatSize(entry.size)].filter(Boolean).join(" · ");
+      const rp = relPath(entry.name);
+      const dirSize = entry.isDir ? folderSizeEl(rp) : null;
+      const subSize = entry.isDir ? folderSizeEl(rp) : formatSize(entry.size);
       const node = h(
         "div",
         { class: "row", role: "row" },
-        h("div", { class: "cell-name" }, lead, h("div", {}, h("span", { class: "name", text: entry.name, title: entry.name }), h("span", { class: "row-sub", text: sub }))),
+        h(
+          "div",
+          { class: "cell-name" },
+          lead,
+          h("div", {}, h("span", { class: "name", text: entry.name, title: entry.name }), h("span", { class: "row-sub" }, formatDate(entry.addedAt), subSize ? " · " : null, subSize))
+        ),
         h("div", { class: "cell-muted", text: formatDate(entry.addedAt) }),
-        h("div", { class: "cell-muted", text: entry.isDir ? "—" : formatSize(entry.size) }),
+        h("div", { class: "cell-muted" }, entry.isDir ? dirSize || "—" : formatSize(entry.size)),
         more
       );
       bindItem(node, entry, more);
@@ -1192,6 +1266,7 @@
           return;
         }
         const token = ++st.token;
+        resetSizes();
         if (!quiet) {
           st.rel = rel;
           st.loading = true;

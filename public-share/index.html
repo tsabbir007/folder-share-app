@@ -109,6 +109,7 @@ function enterApp(meta, permission) {
   }
 
   const logoutBtn = document.getElementById("logout-btn");
+  logoutBtn.hidden = meta.requirePassword === false;
   logoutBtn.replaceChildren(icon("logout"), h("span", { text: "Sign out" }));
   logoutBtn.onclick = async () => {
     await api(base + "/logout", { method: "POST" }).catch(() => {});
@@ -127,6 +128,7 @@ function enterApp(meta, permission) {
       zip: (rel) => base + "/download-zip" + q(rel),
       preview: (rel) => base + "/preview" + q(rel),
       upload: (rel) => base + "/upload" + q(rel),
+      folderSize: (rel) => base + "/folder-size" + q(rel),
     },
     navigate,
     onUnauthorized: () => location.reload(),

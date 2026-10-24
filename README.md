@@ -10,14 +10,30 @@ through a Cloudflare Tunnel — no port forwarding or router config required.
 - **Admin UI** protected by HTTP Basic auth (`USERNAME` / `PASSWORD`) for
   browsing the filesystem and managing shares.
 - **Per-folder share links** (`/share/:id`), each with its own auto-generated
-  password, independent of the admin login.
+  password, independent of the admin login. The password can be turned off
+  per share, so anyone with the link can open it.
 - **Read / write / both permissions** per share — read-only browsing and
   downloads, upload-only drop folders, or full access.
 - **In-browser preview** for images, video, audio, and PDF files.
 - **Drag-and-drop uploads** (when a share allows writes).
+- **All folders view**: besides "All shared folders", the admin sidebar has
+  "All folders", a file browser over the starting folder (set under
+  **Settings**). If that folder is on an unplugged drive, the view says so and
+  picks up again as soon as the drive is reconnected.
+- **Copy, move, and delete** files and folders from the admin UI (the ⋮ menu
+  or right-click on an item). Copy/move can target any folder inside any
+  shared folder; name clashes get a ` (2)` suffix instead of overwriting.
+- **Recycle bin**: deleting moves items to a hidden `.folder-share-trash`
+  folder on the same drive (at the root of the starting folder, or of the
+  share for shares outside it), so even huge folders are "deleted" instantly.
+  From **Recycle bin** in the sidebar the admin can restore items to where
+  they were, delete them forever, or empty the bin. Share-link users can never
+  see the bin, and it's left out of ZIP downloads. Binned items still use disk
+  space until the bin is emptied.
 - **One-click public tunnel** via [`cloudflared`](https://github.com/cloudflare/cloudflared),
   so a share can be reached from outside your network without exposing your
-  own IP or opening firewall ports.
+  own IP or opening firewall ports — either a random `trycloudflare.com` URL
+  or a fixed URL on your own domain.
 - **Brute-force protection**: failed logins (admin or share) are rate-limited
   per IP — after 10 failed attempts, that IP is locked out for 3 minutes.
 - **Path traversal / symlink escape protection**: all file access is resolved
@@ -56,6 +72,7 @@ Set these in `.env` (see `.env.example`):
 | `PASSWORD`      | yes      | —                       | Admin login password. The app refuses to start if this or `USERNAME` is unset. |
 | `PORT`          | no       | `3000`                  | Port the server listens on.                                                   |
 | `MAX_UPLOAD_MB` | no       | `5120` (5 GB)           | Default max size, in MB, for a single uploaded file. Can be overridden per share from the admin UI. |
+| `ROOT_FOLDER`   | no       | `/Volumes/EB HDD 1`     | Default starting folder: what "All folders" shows and where the folder picker opens. Can be changed from **Settings** in the admin UI. |
 | `DATA_DIR`      | no       | project root            | Directory where `.state.json` (share list + passwords) is stored. Set this to a mounted volume when running in Docker. |
 
 ## How sharing works
@@ -74,12 +91,34 @@ Set these in `.env` (see `.env.example`):
 Regenerating a share's password immediately invalidates any existing sessions
 for that link. Deleting a share does the same.
 
+Each share has a **Require password** switch (in the "Share a folder" dialog
+and in Share settings). With it off, the link opens straight into the folder
+with no login — only do this for folders you're happy for anyone with the link
+to see.
+
 ## Exposing a share publicly
 
 From the admin UI you can start a Cloudflare Tunnel, which runs `cloudflared`
-as a child process and returns a public `https://*.trycloudflare.com` URL that
-proxies to your local server. Stop the tunnel from the same UI when you're
-done. No Cloudflare account is required for these quick tunnels.
+as a child process. Pick the kind of public URL with the settings button next
+to **Start tunnel** (or "Public URL settings" in the top-right tunnel menu):
+
+- **Random URL** (default) — a new `https://<random>.trycloudflare.com`
+  address each time the tunnel starts. No Cloudflare account needed. Old
+  links stop working when the tunnel restarts.
+- **Fixed URL** — always the same address, e.g. `https://files.example.com`.
+  This needs a free Cloudflare account and a domain whose DNS is on
+  Cloudflare. One-time setup:
+  1. Cloudflare dashboard → **Zero Trust → Networks → Tunnels → Create a
+     tunnel** (type *Cloudflared*), give it a name.
+  2. Copy the token from the install command it shows (you can paste the
+     whole command; the app keeps only the token).
+  3. Under **Public Hostname**, add your hostname (e.g. `files.example.com`)
+     with service `HTTP` → `localhost:<PORT>` (the app's `PORT`, e.g. `3100`).
+  4. In the app's Public URL settings, choose **Fixed URL**, enter the same
+     hostname and the token, and save.
+
+The token is stored in `.state.json` alongside the share passwords and is
+never sent back to the browser.
 
 ## Running with Docker
 
@@ -112,7 +151,9 @@ docker compose up --build -d # rebuild after pulling code changes
   overrides) in a named volume (`folder-share-data`) mounted at `/data`, so
   it survives container rebuilds and restarts.
 - Mounts host folders into the container at the **same path** they exist on
-  the host, so shares configured through the admin UI keep working. Edit the
+  the host, so shares configured through the admin UI keep working. All of
+  `/Volumes` is mounted (not individual drives) so external drives can be
+  ejected and reconnected without restarting the container. Edit the
   `volumes:` section to add the drives/folders you want to be able to select
   — anything not listed there won't be visible to the folder picker inside
   the container, even if it exists on the host.
