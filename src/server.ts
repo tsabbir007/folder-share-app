@@ -915,12 +915,67 @@ function downloadFolderZip(share: Share, req: Request, res: Response) {
       if (!res.headersSent) res.status(500).json({ error: err.message });
       else res.destroy(err);
     });
+    // Stop reading files as soon as the browser cancels the download.
+    let aborted = false;
+    res.on("close", () => {
+      if (!res.writableFinished) {
+        aborted = true;
+        archive.abort();
+      }
+    });
     archive.pipe(res);
-    // Never ship the recycle bin inside a ZIP of a shared folder.
-    archive.directory(target, false, (entry) => (entry.name.split("/").includes(TRASH_DIR) ? false : entry));
-    archive.finalize();
+    // Walk the tree ourselves instead of archive.directory(): archiver 7's
+    // walker pauses on each entry and never resumes if that entry is a FIFO,
+    // socket or device, or vanishes before it's stat'd, which left the
+    // download hanging forever.
+    addFolderToZip(archive, target, () => aborted)
+      .then(() => {
+        if (!aborted) archive.finalize();
+      })
+      .catch((err) => archive.emit("error", err));
   } catch (err: any) {
     res.status(400).send(err.message);
+  }
+}
+
+// Queues every regular file and directory under `root` (minus the recycle
+// bin). Symlinks and special files are skipped, as are entries that can't be
+// read, so one odd entry never stalls or breaks the whole ZIP.
+async function addFolderToZip(archive: archiver.Archiver, root: string, isAborted: () => boolean) {
+  const pending = [""];
+  while (pending.length && !isAborted()) {
+    const relDir = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = await fs.promises.readdir(path.join(root, relDir), { withFileTypes: true });
+    } catch (err: any) {
+      console.warn("ZIP warning:", err.message);
+      continue;
+    }
+    for (const entry of entries) {
+      if (entry.name === TRASH_DIR) continue;
+      const rel = relDir ? relDir + "/" + entry.name : entry.name;
+      const abs = path.join(root, rel);
+      let stats: fs.Stats;
+      try {
+        stats = await fs.promises.lstat(abs);
+      } catch (err: any) {
+        console.warn("ZIP warning:", err.message);
+        continue;
+      }
+      if (stats.isDirectory()) {
+        archive.file(abs, { name: rel, stats });
+        pending.push(rel);
+      } else if (stats.isFile()) {
+        try {
+          await fs.promises.access(abs, fs.constants.R_OK);
+        } catch (err: any) {
+          console.warn("ZIP warning:", err.message);
+          continue;
+        }
+        archive.file(abs, { name: rel, stats });
+      }
+    }
   }
 }
 
